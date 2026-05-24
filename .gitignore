@@ -1,0 +1,24 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.kotlin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local
+local.properties
+
+# Misc
+*.log
+*.tmp
+*.swp
+*~
