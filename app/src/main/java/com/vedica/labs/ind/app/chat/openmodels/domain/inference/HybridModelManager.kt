@@ -91,7 +91,7 @@ class HybridModelManager @Inject constructor(
 
     private fun resolveFormat(modelId: String, modelPath: String): ModelFormat {
         val ext = modelPath.substringAfterLast('.', "")
-        val fromExt = ModelFormat.fromExtension(ext)
+        val fromExt = ModelFormat.fromExtension(".$ext")
         if (fromExt != ModelFormat.UNKNOWN) return fromExt
 
         return try {

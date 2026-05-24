@@ -22,3 +22,9 @@ local.properties
 *.tmp
 *.swp
 *~
+
+# CMake build artifacts (auto-generated)
+app/.cxx/
+
+# llama.cpp external repo (clone manually from https://github.com/ggml-org/llama.cpp)
+app/src/main/cpp/llama.cpp/

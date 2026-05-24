@@ -3,31 +3,21 @@ package com.vedica.labs.ind.app.chat.openmodels.domain.inference
 import android.util.Log
 import com.vedica.labs.ind.app.chat.openmodels.data.model.InferenceParams
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emitAll
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
-import kotlin.coroutines.coroutineContext
-import kotlinx.coroutines.isActive
 import java.io.File
 import java.io.RandomAccessFile
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * GGUF inference engine using llama.cpp native bindings.
- *
- * This engine loads GGUF format model files and runs inference via llama.cpp.
- * The native library is loaded via System.loadLibrary("llama").
- *
- * To use a real llama.cpp build:
- * 1. Build llama.cpp for Android (arm64-v8a, armeabi-v7a, x86_64)
- * 2. Place .so files in app/src/main/jniLibs/<abi>/
- * 3. The native methods will be resolved automatically
- *
- * Currently falls back to simulated responses if native lib is unavailable.
- */
+interface NativeTokenCallback {
+    fun onToken(token: String)
+    fun onComplete()
+    fun onError(error: String)
+}
+
 @Singleton
 class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
 
@@ -44,7 +34,7 @@ class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
 
     companion object {
         private const val TAG = "GGUFEngine"
-        private val MAGIC_GGUF = byteArrayOf(0x47, 0x47, 0x55, 0x46) // "GGUF"
+        private val MAGIC_GGUF = byteArrayOf(0x47, 0x47, 0x55, 0x46)
 
         private val MODEL_TEMPLATES = mapOf(
             "smollm_135m_q2" to "chatml", "smollm_135m_iq3" to "chatml",
@@ -64,12 +54,12 @@ class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
 
     init {
         try {
-            System.loadLibrary("llama")
+            System.loadLibrary("llama_jni")
             _nativeAvailable = true
             Log.i(TAG, "llama.cpp native library loaded successfully")
         } catch (e: UnsatisfiedLinkError) {
             _nativeAvailable = false
-            Log.w(TAG, "llama.cpp native library not available, will use simulation")
+            Log.wtf(TAG, "llama.cpp native library not available. Real inference requires libllama.so")
         }
     }
 
@@ -78,6 +68,13 @@ class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
         modelPath: String,
         hyperparams: Map<String, Any>?
     ): Boolean {
+        if (!_nativeAvailable) {
+            throw Exception(
+                "llama.cpp native library is not installed. " +
+                "Build llama.cpp for Android and place .so files in app/src/main/jniLibs/arm64-v8a/."
+            )
+        }
+
         unloadModel()
 
         val file = File(modelPath)
@@ -99,26 +96,21 @@ class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
         _currentModelId = modelId
         _currentTemplate = MODEL_TEMPLATES[modelId] ?: "chatml"
 
-        if (_nativeAvailable) {
-            try {
-                val threads = (hyperparams?.get("threads") as? Number)?.toInt() ?: 4
-                val contextSize = (hyperparams?.get("contextSize") as? Number)?.toInt() ?: 2048
-                val gpuLayers = (hyperparams?.get("gpuLayers") as? Number)?.toInt()
+        try {
+            val threads = (hyperparams?.get("threads") as? Number)?.toInt() ?: 4
+            val contextSize = (hyperparams?.get("contextSize") as? Number)?.toInt() ?: 2048
+            val gpuLayers = (hyperparams?.get("gpuLayers") as? Number)?.toInt()
 
-                _nativeModelPtr = nativeLoadModel(modelPath, threads, contextSize, gpuLayers ?: 0)
-                if (_nativeModelPtr == 0L) {
-                    throw Exception("Failed to initialize model in GGUF inference engine.")
-                }
-                _isLoaded = true
-                return true
-            } catch (e: Exception) {
-                _currentModelId = null
-                _currentTemplate = null
-                throw e
+            _nativeModelPtr = nativeLoadModel(modelPath, threads, contextSize, gpuLayers ?: 0)
+            if (_nativeModelPtr == 0L) {
+                throw Exception("Failed to initialize model in GGUF inference engine.")
             }
-        } else {
             _isLoaded = true
             return true
+        } catch (e: Exception) {
+            _currentModelId = null
+            _currentTemplate = null
+            throw e
         }
     }
 
@@ -126,33 +118,41 @@ class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
         messages: List<ChatMessage>,
         template: String?,
         params: InferenceParams
-    ): Flow<String> = flow {
-        val modelLabel = _currentModelId ?: "Local Model"
+    ): Flow<String> = callbackFlow {
+        if (!_nativeAvailable || _nativeModelPtr == 0L) {
+            close(Exception("llama.cpp native library not loaded"))
+            return@callbackFlow
+        }
 
-        if (_nativeAvailable && _nativeModelPtr != 0L) {
-            val prompt = buildPrompt(messages, template ?: _currentTemplate ?: "chatml")
-            val nativeFlow = nativeGenerateChat(
-                modelPtr = _nativeModelPtr,
-                prompt = prompt,
-                maxTokens = params.maxTokens,
-                temperature = params.temperature.toFloat(),
-                topP = params.topP.toFloat(),
-                topK = params.topK
-            )
-            emitAll(nativeFlow)
-        } else {
-            val baseDelayMs = (40 + (params.temperature * 15)).toLong()
-            val userQuery = messages.lastOrNull()?.content?.lowercase() ?: ""
-            val response = buildSimulatedResponse(userQuery, modelLabel, params)
+        val prompt = buildPrompt(messages, template ?: _currentTemplate ?: "chatml")
 
-            val words = response.split(" ").take(params.maxTokens)
-            for (word in words) {
-                if (!coroutineContext.isActive) break
-                val jitter = (Math.random() * baseDelayMs * 0.5).toLong()
-                delay(baseDelayMs + jitter)
-                emit("$word ")
+        val callback = object : NativeTokenCallback {
+            override fun onToken(token: String) {
+                trySend(token)
             }
-            emit("[DONE]")
+
+            override fun onComplete() {
+                trySend("[DONE]")
+                close()
+            }
+
+            override fun onError(error: String) {
+                close(Exception(error))
+            }
+        }
+
+        nativeGenerateChat(
+            modelPtr = _nativeModelPtr,
+            prompt = prompt,
+            maxTokens = params.maxTokens,
+            temperature = params.temperature.toFloat(),
+            topP = params.topP.toFloat(),
+            topK = params.topK,
+            callback = callback
+        )
+
+        awaitClose {
+            nativeStopGeneration(_nativeModelPtr)
         }
     }.flowOn(Dispatchers.IO)
 
@@ -237,15 +237,15 @@ class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
         else -> "$bytes B"
     }
 
-    // llama.cpp native JNI methods
     private external fun nativeLoadModel(
         modelPath: String, threads: Int, contextSize: Int, gpuLayers: Int
     ): Long
 
     private external fun nativeGenerateChat(
         modelPtr: Long, prompt: String,
-        maxTokens: Int, temperature: Float, topP: Float, topK: Int
-    ): Flow<String>
+        maxTokens: Int, temperature: Float, topP: Float, topK: Int,
+        callback: NativeTokenCallback
+    )
 
     private external fun nativeStopGeneration(modelPtr: Long)
     private external fun nativeUnloadModel(modelPtr: Long)
@@ -273,20 +273,5 @@ class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
         _isLoaded = false
         _currentModelId = null
         _currentTemplate = null
-    }
-
-    // Simulated response for when native lib is unavailable
-    private fun buildSimulatedResponse(
-        query: String, modelLabel: String, params: InferenceParams
-    ): String = when {
-        query.contains("hello") || query.contains("hi") ->
-            "Hello! I am running under **$modelLabel** via gguf inference engine."
-        query.contains("code") || query.contains("kotlin") ->
-            "```kotlin\nfun greet() = println(\"Hello from $modelLabel!\")\n```"
-        else ->
-            "Processed via **$modelLabel** (llama.cpp GGUF).\n\nParams: " +
-            "Temp=${"%.1f".format(params.temperature)}, " +
-            "Top-P=${"%.2f".format(params.topP)}, " +
-            "Top-K=${params.topK}, Max Tokens=${params.maxTokens}"
     }
 }

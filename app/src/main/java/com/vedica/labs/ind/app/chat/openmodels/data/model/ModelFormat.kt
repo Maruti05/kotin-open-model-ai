@@ -15,8 +15,7 @@ enum class ModelFormat {
         }
 
         fun fromFileSize(sizeBytes: Long): ModelFormat {
-            val mb = sizeBytes / (1024 * 1024)
-            return if (mb < 300) TFLITE else GGUF
+            return GGUF
         }
     }
 }

@@ -22,6 +22,7 @@
     <a href="#screens">Screens</a> •
     <a href="#model-loading-and-inference">Model Loading</a> •
     <a href="#download-system">Download System</a> •
+    <a href="#llamacpp-native-inference">llama.cpp Setup</a> •
     <a href="#building">Building</a> •
     <a href="#tech-stack">Tech Stack</a>
   </p>
@@ -477,15 +478,24 @@ Upgraded to AGP 9.2.1 with built-in Kotlin support (enabled by default in AGP 9.
 - **Android Studio** Ladybug or newer (2024.3+)
 - **JDK 21** (managed by Gradle toolchain — auto-downloaded via `foojay-resolver-convention`)
 - **Android SDK** 36
+- **NDK** 28+ (bundled with Android Studio — install via SDK Manager → SDK Tools → NDK)
 - **Gradle** 9.4.1 (wrapped)
 
-### Clone and Build
+### Clone Repositories
 
 ```bash
 git clone https://github.com/yourusername/openmodels.git
 cd openmodels
+git clone https://github.com/ggml-org/llama.cpp app/src/main/cpp/llama.cpp
+```
+
+### Build
+
+```bash
 ./gradlew assembleDebug
 ```
+
+First build compiles all llama.cpp C++ sources (~5–10 min). Subsequent builds are incremental.
 
 ### Generate Signed APK/App Bundle
 
@@ -501,21 +511,314 @@ cd openmodels
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### Using llama.cpp Native Inference
+---
 
-To enable real neural inference instead of simulation:
+## llama.cpp Native Inference
 
-1. Build [llama.cpp](https://github.com/ggerganov/llama.cpp) for Android:
-   ```bash
-   git clone https://github.com/ggerganov/llama.cpp
-   cd llama.cpp
-   mkdir build && cd build
-   cmake .. -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26
-   make -j4
-   ```
-2. Copy `libllama.so` to `app/src/main/jniLibs/arm64-v8a/`
-3. Rebuild — `GGUFInferenceEngine` will detect the native library and use it automatically
+This project uses [llama.cpp](https://github.com/ggml-org/llama.cpp) for real on-device neural network inference with GGUF format models. The native library is built directly from source via CMake's `add_subdirectory()` — no separate cross-compilation or manual `.so` copying is needed.
+
+### Repository
+
+- **URL**: https://github.com/ggml-org/llama.cpp
+- **License**: MIT
+- **Integration method**: `add_subdirectory(llama.cpp EXCLUDE_FROM_ALL)` in `app/src/main/cpp/CMakeLists.txt`
+
+### Setup
+
+#### 1. Clone llama.cpp into the cpp directory
+
+```bash
+cd app/src/main/cpp/
+git clone https://github.com/ggml-org/llama.cpp
+```
+
+The JNI bridge expects llama.cpp at `app/src/main/cpp/llama.cpp/`. This exact path is hardcoded in `CMakeLists.txt` via `add_subdirectory(llama.cpp ...)`.
+
+#### 2. Project files
+
+| File | Purpose |
+|------|---------|
+| `app/src/main/cpp/llama_jni.cpp` | JNI bridge — loads model, tokenizes, runs generation loop, streams tokens back to Kotlin via `NativeTokenCallback` |
+| `app/src/main/cpp/CMakeLists.txt` | CMake build config — links `llama_jni` against `llama`, `ggml`, `ggml-base`, `ggml-cpu` |
+| `app/build.gradle.kts` | Android NDK config — `externalNativeBuild { cmake { ... } }` + `ndk { abiFilters += arm64-v8a }` |
+
+No changes to these files are needed beyond the initial setup.
+
+### Build Configuration
+
+#### CMakeLists.txt (`app/src/main/cpp/CMakeLists.txt`)
+
+```cmake
+cmake_minimum_required(VERSION 3.22)
+project(llama_jni)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_subdirectory(llama.cpp EXCLUDE_FROM_ALL)
+
+add_library(llama_jni SHARED llama_jni.cpp)
+
+target_include_directories(llama_jni PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/ggml/include
+)
+
+target_link_libraries(llama_jni
+    llama
+    ggml
+    ggml-base
+    ggml-cpu
+    log
+)
+
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    target_compile_definitions(llama_jni PRIVATE GGML_USE_LLAMAFILE=1)
+endif()
+```
+
+#### build.gradle.kts (`app/build.gradle.kts`)
+
+```kotlin
+android {
+    defaultConfig {
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+}
+```
+
+**Important**: Only `arm64-v8a` is supported. If you need other ABIs, add them to `abiFilters` — but note that `GGML_USE_LLAMAFILE` optimization is only enabled for `arm64-v8a`.
+
+### Architecture
+
+```
+Kotlin (GGUFInferenceEngine)
+  │  System.loadLibrary("llama_jni")
+  │  external fun nativeLoadModel(...)
+  │  external fun nativeGenerateChat(...)
+  │  external fun nativeStopGeneration(...)
+  │  external fun nativeUnloadModel(...)
+  ▼
+JNI (llama_jni.cpp)
+  │  llama_backend_init()          ← std::call_once (once per process)
+  │  llama_model_load_from_file()
+  │  llama_init_from_model()
+  │  llama_sampler_chain_init()    ← created fresh per generation
+  │  llama_batch_get_one()         ← auto-tracked positions
+  │  llama_decode()                ← prompt eval + token-by-token
+  │  llama_sampler_sample()        ← top_k → top_p → temp → dist/greedy
+  │  llama_token_to_piece()        ← token → string
+  │  llama_vocab_is_eog()          ← end-of-generation check
+  ▼
+llama.cpp C API
+  │  ggml backend (CPU)
+  │  model weights, tokenizer, sampler chain
+  ▼
+Model file (GGUF on disk, memory-mapped via mmap)
+```
+
+### Engine Selection Flow
+
+```kotlin
+HybridModelManager.resolveFormat(modelId, modelPath)
+  → path ends with ".gguf"   → ModelFormat.GGUF
+  → GGUFInferenceEngine      → real llama.cpp inference
+```
+
+All other formats (TFLITE, ONNX, UNKNOWN) route to `SimulatedInferenceEngine`.
+
+### Generation Loop (llama_jni.cpp)
+
+```
+1. tokenize prompt           → vector<llama_token>
+2. create sampler chain      → top_k + top_p + temp + dist/greedy
+3. llama_decode (prompt)     → prompt evaluation
+4. loop:
+   a. llama_sampler_sample   → pick next token
+   b. llama_vocab_is_eog     → check for end-of-generation
+   c. llama_token_to_piece   → convert token to text
+   d. JNI callback onToken   → stream to Kotlin Flow
+   e. llama_decode (1 token) → advance model state
+5. JNI callback onComplete   → signal [DONE]
+```
+
+### Common Errors and How to Fix Them
+
+#### 1. "llama.cpp native library not available"
+
+**Error in logcat**: `WTF/GGUFEngine: llama.cpp native library not available`
+
+**Cause**: `System.loadLibrary("llama_jni")` failed with `UnsatisfiedLinkError`.
+
+**Fixes**:
+- Run `git clone https://github.com/ggml-org/llama.cpp` inside `app/src/main/cpp/`
+- Run **File → Sync Project with Gradle Files** in Android Studio
+- Run **Build → Make Project** to trigger the CMake build
+- Check that `app/build/intermediates/merged_native_libs/debug/out/lib/arm64-v8a/libllama_jni.so` exists after build
+
+#### 2. "No matching function for call to 'llama_batch_get_one'"
+
+**Error in build output**:
+```
+error: no matching function for call to 'llama_batch_get_one'
+note: candidate function not viable: 1st argument ('const value_type *') would lose const qualifier
+```
+
+**Cause**: `llama_batch_get_one` expects non-const `llama_token *` but receives `const llama_token *` from a `const` lambda capture.
+
+**Fix**: The lambda capturing `tokens` must be declared `mutable`:
+```cpp
+mctx->gen_thread = std::thread([...]() mutable {
+    // ...
+    llama_batch batch = llama_batch_get_one(tokens.data(), tokens.size());
+});
+```
+
+#### 3. App crashes immediately when sending a message (SIGSEGV)
+
+**Cause**: `nativeUnloadModel` frees the model/context while a detached generation thread is still using them (use-after-free), OR `llama_backend_init` is called twice without `llama_backend_free` in between.
+
+**Fixes in `llama_jni.cpp`**:
+- Use `std::call_once` for `llama_backend_init` — initialize exactly once per process:
+  ```cpp
+  static std::once_flag backend_init_flag;
+  static void ensure_backend_init() {
+      std::call_once(backend_init_flag, []() {
+          llama_backend_init();
+      });
+  }
+  ```
+- Use an `std::atomic<bool> thread_running` flag + busy-wait in `nativeUnloadModel` instead of relying on `gen_thread.joinable()` (which is always false after `detach()`):
+  ```cpp
+  mctx->stop_requested.store(true);
+  for (int i = 0; i < 100 && mctx->thread_running.load(); i++) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  // now safe to free
+  ```
+- Clean up JNI global refs (`DeleteGlobalRef`) **before** `DetachCurrentThread`, not after.
+
+#### 4. "Tokenization failed" snackbar
+
+**Error in logcat**: `Tokenization failed or empty prompt`
+
+**Cause**: `llama_tokenize(vocab, text, len, nullptr, 0, true, false)` returns a **negative** number indicating the needed buffer size (e.g., -3 for 3 tokens). Code that checks `n_tokens <= 0` rejects this as an error.
+
+**Fix**: Take the absolute value of a negative return:
+```cpp
+int n_tokens = llama_tokenize(vocab, prompt, strlen(prompt), nullptr, 0, true, false);
+if (n_tokens == std::numeric_limits<int32_t>::min()) {
+    // overflow — prompt too long (INT32_MIN)
+    // report error
+}
+if (n_tokens < 0) {
+    n_tokens = -n_tokens;  // negative = "-n_tokens needed"
+}
+if (n_tokens == 0) {
+    // truly empty — report error
+}
+std::vector<llama_token> tokens(n_tokens);
+llama_tokenize(vocab, prompt, strlen(prompt), tokens.data(), n_tokens, true, false);
+```
+
+#### 5. llama.cpp build fails with "GGML_USE_LLAMAFILE=1" issues
+
+**Cause**: The `GGML_USE_LLAMAFILE` define is only set on the `llama_jni` target, not on the `llama`/`ggml` targets. In recent llama.cpp versions, the llamafile backend is auto-detected by the CMake build, so the explicit define on `llama_jni` is harmless but may cause redefinition warnings.
+
+**Fix**: Remove the explicit `target_compile_definitions` from `CMakeLists.txt` if llama.cpp's own CMake handles it:
+```cmake
+# Remove or comment out:
+# if(ANDROID_ABI STREQUAL "arm64-v8a")
+#     target_compile_definitions(llama_jni PRIVATE GGML_USE_LLAMAFILE=1)
+# endif()
+```
+
+#### 6. "Failed to load model" — model loads in Java but not in C++
+
+**Cause**: The model path passed from Kotlin doesn't match the actual file location. `ModelRepository.getModelPath(modelId)` returns a path under the app's internal storage (e.g., `/data/data/.../files/OpenModels/smollm_135m_q4.gguf`), which the C++ side can access.
+
+**Debug**: Add `LOGI` to print the model path in `nativeLoadModel`. Check `adb logcat -s LlamaJNI` for:
+```
+LlamaJNI: Loading model: /data/data/.../smollm_135m_q4.gguf (threads=4, ctx=2048, gpu=0)
+LlamaJNI: Model loaded, ctx=0x7b...
+```
+
+#### 7. "Prompt evaluation failed" during generation
+
+**Cause**: `llama_decode()` returned non-zero. This can happen if:
+- `llama_context_params.n_ctx` is too small for the prompt
+- The model file is corrupt (check GGUF magic bytes validation)
+- Memory pressure — the device doesn't have enough free RAM for the working set
+
+**Fixes**:
+- Ensure `n_ctx` (context size) is large enough for the prompt tokens + generated tokens
+- Check that the model file passes the GGUF magic byte check in `GGUFInferenceEngine.isValidGguf()`
+- Free other apps' memory or use a smaller model
+
+#### 8. "Decode failed at token N" mid-generation
+
+**Cause**: `llama_decode()` fails during token-by-token generation, typically returning 1 (could not find a KV slot). This means the context window is full.
+
+**Fix**: Increase `n_ctx` in the inference params, or the model has reached its maximum context length.
+
+#### 9. Linking error: undefined reference to `llama_*`
+
+**Cause**: The `llama` target is not being built or linked. This happens if `add_subdirectory(llama.cpp)` is missing or the CMake target names have changed.
+
+**Fixes**:
+- Verify `app/src/main/cpp/llama.cpp/` exists and has a `CMakeLists.txt`
+- Check the llama.cpp CMake target names — in recent versions they are:
+  - `llama` (main library)
+  - `ggml` (tensor library)
+  - `ggml-base` (base backend)
+  - `ggml-cpu` (CPU backend)
+- Run **Build → Clean Project** then **Build → Make Project**
+
+#### 10. Build takes very long (5–10 minutes)
+
+**Cause**: First build compiles all llama.cpp C++ sources (~100+ files). Subsequent builds are incremental.
+
+**Fix**: Be patient on the first build. Use `ccache` if available on your build machine for faster rebuilds.
+
+### Template Support
+
+The JNI bridge supports these chat templates, configured per model in `GGUFInferenceEngine.MODEL_TEMPLATES`:
+
+| Template | Format | Example Models |
+|----------|--------|---------------|
+| `chatml` | `<\|im_start\|>role\ncontent<\|im_end\|>\n` | SmolLM2, Qwen2.5 |
+| `llama2` | `[INST] content [/INST]` | TinyLlama, Llama 3.2 |
+| `phi` | `Question: ...\n\nAnswer: ` | Phi-1.5, Phi-2, Phi-3 Mini |
+| `gemma` | `<start_of_turn>role\ncontent<end_of_turn>` | Gemma 2 |
+
+### Sampler Chain
+
+The generation uses this sampler chain based on temperature:
+
+```
+Temperature > 0.0:
+  top_k(topK) → top_p(topP, min_keep=1) → temp(temperature) → dist(seed)
+
+Temperature ≤ 0.0:
+  greedy()
+```
+
+### First Build
+
+1. Clone llama.cpp: `git clone https://github.com/ggml-org/llama.cpp` into `app/src/main/cpp/`
+2. Open project in Android Studio
+3. **File → Sync Project with Gradle Files**
+4. **Build → Make Project** (first build: ~5–10 min)
+5. Connect device and **Run** (`Shift+F10`)
 
 ---
 
