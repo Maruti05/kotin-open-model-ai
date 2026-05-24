@@ -6,7 +6,7 @@
   **Run Open-Source LLMs Privately on Your Android Device**
 
   <p>
-    <img src="https://img.shields.io/badge/Kotlin-2.2.10-purple?logo=kotlin" alt="Kotlin"/>
+    <img src="https://img.shields.io/badge/Kotlin-2.3.21-purple?logo=kotlin" alt="Kotlin"/>
     <img src="https://img.shields.io/badge/Compose-2026.05.01-blue?logo=jetpackcompose" alt="Compose"/>
     <img src="https://img.shields.io/badge/AGP-9.2.1-green?logo=android" alt="AGP"/>
     <img src="https://img.shields.io/badge/Room-2.8.4-orange" alt="Room"/>
@@ -224,8 +224,10 @@ app/src/main/java/com/vedica/labs/ind/app/chat/openmodels/
 | Component | Description |
 |-----------|-------------|
 | **Session List** | Side panel or list of chat sessions with model name, message count, last preview |
-| **Message History** | Paginated lazy list — user bubbles + AI markdown-rendered responses |
-| **Input Bar** | Text field with send button — supports multi-line |
+| **Message History** | Paginated lazy list — content-width bubbles with asymmetric rounded corners (18dp, tail 4dp), user indigo right-aligned, AI surface left-aligned |
+| **Copy Message** | Three-dot overflow menu on every bubble → copies text to clipboard |
+| **Input Bar** | Pill-shaped multi-line field with top-rounded bar (20dp), keyboard-aware via `imePadding()` — stays above soft keyboard |
+| **Send / Stop** | Circular filled buttons — neon send when idle, red stop during generation |
 | **Thinking/Reasoning** | Toggle visibility of model's thinking/reasoning steps |
 | **Token Tracking** | Real-time tokens-per-second display during generation |
 
@@ -439,6 +441,23 @@ Tabs:   Cyan, Indigo, Green, Purple — each screen's accent color
 
 ---
 
+## Build Configuration
+
+### AGP 9.x Migration
+
+Upgraded to AGP 9.2.1 with built-in Kotlin support (enabled by default in AGP 9.x):
+
+| Change | Before | After |
+|--------|--------|-------|
+| **Kotlin plugin** | `org.jetbrains.kotlin.android` | Removed — built-in Kotlin handles compilation |
+| **KSP** | `2.2.10-2.0.2` (tied to Kotlin) | `2.3.8` (independent versioning — KSP2) |
+| **Kotlin version** | `2.2.10` | `2.3.21` |
+| **DSL type** | `android.newDsl=false` (BaseAppModuleExtension) | Default `true` (ApplicationExtension) |
+| **JVM target** | `kotlinOptions { jvmTarget = "17" }` | Derives from `compileOptions.targetCompatibility = VERSION_17` |
+| **Built-in Kotlin** | `android.builtInKotlin=false` | Default `true` — AGP manages Kotlin compilation |
+
+---
+
 ## UI Components
 
 | Component | File | Usage |
@@ -504,11 +523,11 @@ To enable real neural inference instead of simulation:
 
 | Category | Library | Version |
 |----------|---------|---------|
-| **Language** | Kotlin | 2.2.10 |
+| **Language** | Kotlin | 2.3.21 |
 | **UI** | Jetpack Compose (Material3) | BOM 2026.05.01 |
 | **Icons** | Material Icons Extended | via BOM |
 | **DI** | Dagger Hilt | 2.59.2 |
-| **KSP** | Kotlin Symbol Processing | 2.2.10-2.0.2 |
+| **KSP** | Kotlin Symbol Processing | 2.3.8 |
 | **Database** | Room | 2.8.4 |
 | **Preferences** | DataStore Preferences | 1.2.0 |
 | **Navigation** | Navigation Compose | 2.9.6 |
@@ -520,7 +539,7 @@ To enable real neural inference instead of simulation:
 | **Markdown** | Markwon (core + strikethrough) | 4.6.2 |
 | **Image Loading** | Coil Compose | 2.7.0 |
 | **HTML Parsing** | Jsoup | 1.18.3 |
-| **Build System** | Android Gradle Plugin | 9.2.1 |
+| **Build System** | Android Gradle Plugin | 9.2.1 (built-in Kotlin) |
 | **Gradle** | Gradle Wrapper | 9.4.1 |
 | **Splash Screen** | Core Splashscreen | 1.2.0 |
 

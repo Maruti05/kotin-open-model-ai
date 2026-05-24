@@ -1,10 +1,15 @@
 package com.vedica.labs.ind.app.chat.openmodels.ui.chat
 
-import androidx.compose.animation.animateContentSize
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -12,8 +17,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vedica.labs.ind.app.chat.openmodels.data.model.ChatMessage
 import com.vedica.labs.ind.app.chat.openmodels.data.model.ChatSession
@@ -49,6 +59,7 @@ fun ChatScreen(
         }
     ) {
         Scaffold(
+            modifier = Modifier.imePadding().navigationBarsPadding(),
             topBar = {
                 TopAppBar(
                     title = {
@@ -87,7 +98,6 @@ fun ChatScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                // Error banner
                 if (state.error != null) {
                     Snackbar(
                         modifier = Modifier.padding(8.dp),
@@ -140,10 +150,7 @@ fun ChatScreen(
 }
 
 @Composable
-private fun modelManagerIsLoaded(state: ChatUiState): Boolean {
-    // In a real app, this would check the model manager state
-    return true // Simplified - the HybridModelManager is injected
-}
+private fun modelManagerIsLoaded(state: ChatUiState): Boolean = true
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -274,20 +281,15 @@ private fun ColumnScope.MessagesList(
             .fillMaxWidth()
             .padding(horizontal = 8.dp),
         reverseLayout = true,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        contentPadding = PaddingValues(vertical = 8.dp)
     ) {
-        // Streaming message at top (newest)
         if (streamingContent.isNotEmpty()) {
             item(key = "streaming") {
-                MessageBubble(
-                    content = streamingContent,
-                    isUser = false,
-                    isStreaming = true
-                )
+                MessageBubble(content = streamingContent, isUser = false, isStreaming = true)
             }
         }
 
-        // Regular messages (newest first due to reverseLayout)
         items(messages.reversed(), key = { it.id }) { message ->
             MessageBubble(
                 content = message.content,
@@ -297,7 +299,6 @@ private fun ColumnScope.MessagesList(
             )
         }
 
-        // Load more button
         if (canLoadMore && messages.isNotEmpty()) {
             item(key = "load_more") {
                 TextButton(
@@ -318,45 +319,101 @@ private fun MessageBubble(
     isStreaming: Boolean = false,
     tokensPerSecond: Double? = null
 ) {
-    val alignment = if (isUser) Alignment.End else Alignment.Start
-    val bgColor = if (isUser) UserBubbleIndigo else MaterialTheme.colorScheme.surface
+    val context = LocalContext.current
+    var showMenu by remember { mutableStateOf(false) }
+
+    val shape = if (isUser) {
+        RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)
+    } else {
+        RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)
+    }
+    val bgColor = if (isUser) UserBubbleIndigo else MaterialTheme.colorScheme.surfaceVariant
+    val textColor = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface
+    val align = if (isUser) Alignment.End else Alignment.Start
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
-        horizontalAlignment = alignment
+        horizontalAlignment = align
     ) {
-        Surface(
-            shape = MaterialTheme.shapes.medium,
-            color = bgColor,
-            tonalElevation = if (isUser) 0.dp else 2.dp
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            modifier = Modifier.wrapContentWidth()
         ) {
-            Column(modifier = Modifier.padding(12.dp).fillMaxWidth(0.85f)) {
-                if (isUser) {
-                    Text(
-                        text = content,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                } else {
-                    // Simple text rendering (markdown would be rendered here in a full implementation)
-                    Text(
-                        text = content + if (isStreaming) " ▊" else "",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+            if (isUser) Spacer(modifier = Modifier.weight(1f))
+
+            Box {
+                Surface(
+                    shape = shape,
+                    color = bgColor,
+                    tonalElevation = if (isUser) 0.dp else 1.dp,
+                    shadowElevation = 1.dp
+                ) {
+                    Column(
+                        modifier = Modifier.widthIn(max = 280.dp).padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = content + if (isStreaming) " ▊" else "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = textColor,
+                            lineHeight = 22.sp
+                        )
+                        if (tokensPerSecond != null) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${"%.1f".format(tokensPerSecond)} tok/s",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = textColor.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
                 }
-                if (tokensPerSecond != null) {
-                    Text(
-                        text = "${"%.1f".format(tokensPerSecond)} tok/s",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+
+                Box(
+                    modifier = Modifier
+                        .align(if (isUser) Alignment.CenterStart else Alignment.CenterEnd)
+                        .offset(x = if (isUser) (-8).dp else 8.dp)
+                ) {
+                    IconButton(
+                        onClick = { showMenu = true },
+                        modifier = Modifier.size(20.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = "More",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Copy") },
+                            onClick = {
+                                showMenu = false
+                                copyToClipboard(context, content)
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                            }
+                        )
+                    }
                 }
             }
+
+            if (!isUser) Spacer(modifier = Modifier.weight(1f))
         }
     }
+}
+
+private fun copyToClipboard(context: Context, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clip = ClipData.newPlainText("chat_message", text)
+    clipboard.setPrimaryClip(clip)
 }
 
 @Composable
@@ -366,41 +423,76 @@ private fun InputBar(
     onStop: () -> Unit
 ) {
     var text by remember { mutableStateOf("") }
+    val focusManager = LocalFocusManager.current
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
         tonalElevation = 4.dp,
-        shadowElevation = 8.dp
+        shadowElevation = 8.dp,
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        color = MaterialTheme.colorScheme.surface
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Type a message...") },
+                placeholder = { Text("Type a message...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)) },
                 enabled = !isGenerating,
-                singleLine = true,
+                maxLines = 4,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(
+                    onSend = {
+                        if (text.isNotBlank()) {
+                            onSend(text.trim())
+                            text = ""
+                            focusManager.clearFocus()
+                        }
+                    }
+                ),
+                shape = RoundedCornerShape(24.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = NeonCyan,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                    focusedContainerColor = MaterialTheme.colorScheme.background,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.background
                 )
             )
             Spacer(modifier = Modifier.width(8.dp))
             if (isGenerating) {
-                IconButton(onClick = onStop) {
-                    Icon(Icons.Default.Stop, contentDescription = "Stop", tint = ErrorRed)
+                FilledIconButton(
+                    onClick = onStop,
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = ErrorRed),
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Icon(Icons.Default.Stop, contentDescription = "Stop", tint = Color.White)
                 }
             } else {
-                IconButton(
-                    onClick = { if (text.isNotBlank()) { onSend(text); text = "" } },
-                    enabled = text.isNotBlank()
+                FilledIconButton(
+                    onClick = {
+                        if (text.isNotBlank()) {
+                            onSend(text.trim())
+                            text = ""
+                            focusManager.clearFocus()
+                        }
+                    },
+                    enabled = text.isNotBlank(),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = NeonCyan,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    shape = RoundedCornerShape(50)
                 ) {
-                    Icon(Icons.Default.Send, contentDescription = "Send", tint = NeonCyan)
+                    Icon(
+                        Icons.Default.Send,
+                        contentDescription = "Send",
+                        tint = if (text.isNotBlank()) DarkObsidian else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }

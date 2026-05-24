@@ -12,18 +12,16 @@ class SettingsRepository @Inject constructor(
     private val preferences: AppPreferences
 ) {
     fun getInferenceParams(): Flow<InferenceParams> = combine(
-        preferences.temperature,
-        preferences.topP,
-        preferences.topK,
-        preferences.maxTokens,
-        preferences.systemPrompt,
-        preferences.showThinking,
-        preferences.showReasoning
-    ) { array: Array<*> ->
-        InferenceParams(
-            temperature = array[0] as Double, topP = array[1] as Double, topK = array[2] as Int,
-            maxTokens = array[3] as Int, systemPrompt = array[4] as String,
-            showThinking = array[5] as Boolean, showReasoning = array[6] as Boolean
+        combine(preferences.temperature, preferences.topP, preferences.topK, preferences.maxTokens) { temp, p, k, tokens ->
+            InferenceParams(
+                temperature = temp, topP = p, topK = k, maxTokens = tokens,
+                systemPrompt = "", showThinking = false, showReasoning = false
+            )
+        },
+        preferences.systemPrompt, preferences.showThinking, preferences.showReasoning
+    ) { params, prompt, thinking, reasoning ->
+        params.copy(
+            systemPrompt = prompt, showThinking = thinking, showReasoning = reasoning
         )
     }
 
