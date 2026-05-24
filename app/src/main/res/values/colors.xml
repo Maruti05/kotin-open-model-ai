@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="dark_obsidian">#FF0B0F19</color>
+    <color name="neon_cyan">#FF00F2FE</color>
+    <color name="light_porcelain">#FFF8FAFC</color>
+    <color name="dark_surface">#FF1E293B</color>
+    <color name="light_surface">#FFFFFFFF</color>
+</resources>

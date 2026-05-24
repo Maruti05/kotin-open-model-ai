@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.OpenModels" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/dark_obsidian</item>
+        <item name="android:navigationBarColor">@color/dark_obsidian</item>
+    </style>
+
+    <style name="Theme.OpenModels.Splash" parent="Theme.OpenModels">
+        <item name="android:windowBackground">@drawable/splash_screen</item>
+    </style>
+</resources>
