@@ -6,6 +6,7 @@ data class InferenceParams(
     val topK: Int = 40,
     val maxTokens: Int = 512,
     val systemPrompt: String = "",
+    val systemPromptEnabled: Boolean = true,
     val showThinking: Boolean = true,
     val showReasoning: Boolean = true
 ) {

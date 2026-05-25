@@ -22,7 +22,6 @@
     <a href="#screens">Screens</a> •
     <a href="#model-loading-and-inference">Model Loading</a> •
     <a href="#download-system">Download System</a> •
-    <a href="#llamacpp-native-inference">llama.cpp Setup</a> •
     <a href="#building">Building</a> •
     <a href="#tech-stack">Tech Stack</a>
   </p>
@@ -37,7 +36,7 @@
 - **📊 Telemetry Dashboard**: Real-time health score, RAM usage, CPU cores, battery monitoring, device tier classification.
 - **📥 Model Repository**: Browse, search, filter by tier (T1/T2/T3) or download status. Device-aware buttons disabled for incompatible models.
 - **⚙️ Inference Controls**: Temperature, Top-P, Top-K, Max Tokens, presets (Precise/Balanced/Creative).
-- **💬 Chat Interface**: Markdown rendering, system prompts, session management with SQLite persistence.
+- **💬 Chat Interface**: Rich markdown rendering (bold, italic, strikethrough, inline code, clickable links), syntax-highlighted code blocks with copy button, long-press context menu, system prompt toggle, session management with SQLite persistence.
 - **🎨 Theme System**: Dark, Light, and System themes with Material3 adaptive color.
 - **🏃 Benchmark Runner**: On-device performance benchmarking with history stored in Room.
 - **⬇️ Download Manager**: Real-time progress with speed (Mbps), auto-completion state machine, error recovery.
@@ -147,7 +146,7 @@ app/src/main/java/com/vedica/labs/ind/app/chat/openmodels/
 │   ├── inference/
 │   │   ├── InferenceEngine.kt   # Interface: loadModel, generateChat, stopGeneration
 │   │   ├── SimulatedInferenceEngine.kt  # Offline fallback — deterministic responses
-│   │   ├── GGUFInferenceEngine.kt       # llama.cpp native bindings (optional)
+│   │   ├── GGUFInferenceEngine.kt       # Llamatik (LlamaBridge API) — real LLM inference
 │   │   └── HybridModelManager.kt        # Auto-selects engine by model format
 │   ├── benchmark/
 │   │   └── BenchmarkRunner.kt   # CPU/RAM stress test for performance scoring
@@ -168,7 +167,9 @@ app/src/main/java/com/vedica/labs/ind/app/chat/openmodels/
     │   └── ModelManagerViewModel.kt# Device capabilities, filtering, download triggers
     ├── chat/
     │   ├── ChatScreen.kt        # Message list, input bar, session management
-    │   └── ChatViewModel.kt     # Message streaming, session state, token tracking
+    │   ├── ChatViewModel.kt     # Message streaming, session state, token tracking
+    │   ├── MarkdownText.kt      # Pure Compose markdown renderer (bold, italic, strikethrough, inline code, links)
+    │   └── CodeBlock.kt         # Code block viewer with syntax highlighting (14+ languages) + copy button
     ├── settings/
     │   ├── SettingsScreen.kt    # Inference params, theme, toggles, presets, support/legal/about
     │   └── SettingsViewModel.kt # Persists all inference params to DataStore
@@ -226,11 +227,15 @@ app/src/main/java/com/vedica/labs/ind/app/chat/openmodels/
 |-----------|-------------|
 | **Session List** | Side panel or list of chat sessions with model name, message count, last preview |
 | **Message History** | Paginated lazy list — content-width bubbles with asymmetric rounded corners (18dp, tail 4dp), user indigo right-aligned, AI surface left-aligned |
-| **Copy Message** | Three-dot overflow menu on every bubble → copies text to clipboard |
+| **Markdown Rendering** | Pure Compose `MarkdownText` — **bold**, *italic*, ~~strikethrough~~, `inline code`, clickable [links](url) — no external markdown library |
+| **Code Blocks** | `CodeBlockView` with dark terminal background, language label, syntax highlighting for 14+ languages (keywords pink, strings blue, comments gray, numbers light blue, types teal, functions yellow, annotations purple), copy button with "Copied!" feedback |
+| **Long-Press Menu** | Per-bubble dropdown: Copy, Copy Code Blocks, Select All |
+| **Streaming Cursor** | Blinking `▊` cursor during generation (suppressed for mixed text/code content) |
 | **Input Bar** | Pill-shaped multi-line field with top-rounded bar (20dp), keyboard-aware via `imePadding()` — stays above soft keyboard |
 | **Send / Stop** | Circular filled buttons — neon send when idle, red stop during generation |
-| **Thinking/Reasoning** | Toggle visibility of model's thinking/reasoning steps |
+| **System Prompt Toggle** | Enable/disable system prompt per conversation |
 | **Token Tracking** | Real-time tokens-per-second display during generation |
+| **Throttled Streaming** | UI updates throttled to ~20/s to prevent main-thread overload (ANR prevention) |
 
 **ViewModel:** `ChatViewModel.kt` — manages sessions via `ChatRepository`, streams tokens from `HybridModelManager`, tracks generation state.
 
@@ -277,14 +282,18 @@ HybridModelManager.loadModelToRam(modelId, hyperparams?)
 - **Speed Simulation**: Adds configurable delay per token (based on temperature) to simulate real inference.
 - **No native code required** — pure Kotlin.
 
-#### GGUFInferenceEngine (Optional — llama.cpp)
+#### GGUFInferenceEngine (Llamatik)
 
-- **Purpose**: Real neural network inference using GGUF format models via llama.cpp native bindings.
-- **Native Loading**: Calls `System.loadLibrary("llama")` to load C++ shared libraries.
+- **Purpose**: Real neural network inference using GGUF format models via [Llamatik](https://github.com/ferranpons/llamatik) — a Kotlin Multiplatform library wrapping llama.cpp.
+- **Library**: `com.llamatik:library:1.6.0` (KMP, no JNI boilerplate, no C++ build step).
 - **Model Validation**: Validates GGUF magic bytes (`GGUF`), checks file size ≥ 8KB, deletes corrupt files.
-- **Prompt Building**: Converts ChatML/Phi/Gemma/Llama2 message formats into native prompt strings.
-- **Fallback**: Falls back to simulated responses if native library isn't installed.
-- **To enable**: Build llama.cpp for Android (arm64-v8a, armeabi-v7a, x86_64), place `.so` files in `app/src/main/jniLibs/<abi>/`.
+- **Prompt Building**: Uses `LlamaBridge.applyChatTemplate()` for automatic chat template formatting, falls back to ChatML.
+- **KV Cache Management**: Calls `LlamaBridge.sessionReset()` between generations to prevent native memory overflow across turns.
+- **Context Overflow Protection**: `truncateMessages()` estimates token count (chars/3.5), reserves 55% for response, drops oldest conversation turns while keeping system + latest messages.
+- **Async Cancellation**: Generation runs on `Dispatchers.IO` via `launch` inside a `callbackFlow`; `LlamaBridge.nativeCancelGenerate()` stops the native generation loop.
+- **Thread Safety**: `@Volatile var _generating` guard prevents overlapping `generateStream` calls.
+- **Crash Resilience**: Comprehensive Timber logging at every step (model load, generation, memory, errors) + `Thread.setDefaultUncaughtExceptionHandler` in `OpenModelsApp`.
+- **No native build required** — the library ships prebuilt `.so` files for all Android ABIs.
 
 #### InferenceEngine Interface
 
@@ -309,16 +318,20 @@ interface InferenceEngine {
 User sends message
     │
     ├── ChatViewModel
-    │   ├── Builds ChatMessage list (system + history + user)
+    │   ├── Builds ChatMessage list (system + history + user, context-truncated)
     │   ├── Calls HybridModelManager.generateChat()
-    │   │   ├── Delegates to active InferenceEngine.generateChat()
-    │   │   │   ├── Builds prompt string from template
-    │   │   │   ├── Returns Flow<String> — streaming tokens
-    │   │   │   └── Emits [DONE] when complete
-    │   │   └── Maps tokens through LlmOutputParser
-    │   └── Collects tokens → appends to message.content
+    │   │   └── Delegates to GGUFInferenceEngine.generateChat()
+    │   │       ├── LlamaBridge.updateGenerateParams() — set temperature, top-p, etc.
+    │   │       ├── LlamaBridge.sessionReset() — clear KV cache between turns
+    │   │       ├── Builds prompt via LlamaBridge.applyChatTemplate()
+    │   │       ├── launch(Dispatchers.IO) { LlamaBridge.generateStream() }
+    │   │       │   ├── onDelta(token) → trySend to callbackFlow
+    │   │       │   ├── onComplete() → emits [DONE]
+    │   │       │   └── onError(msg) → closes flow with exception
+    │   │       └── awaitClose() → nativeCancelGenerate() + cancel job
+    │   └── Collects tokens (throttled every 50ms) → appends to streamingContent
     │
-    └── Message saved to Room via ChatRepository
+    └── Message saved to Room via ChatRepository (with real UUID)
 ```
 
 ---
@@ -478,16 +491,7 @@ Upgraded to AGP 9.2.1 with built-in Kotlin support (enabled by default in AGP 9.
 - **Android Studio** Ladybug or newer (2024.3+)
 - **JDK 21** (managed by Gradle toolchain — auto-downloaded via `foojay-resolver-convention`)
 - **Android SDK** 36
-- **NDK** 28+ (bundled with Android Studio — install via SDK Manager → SDK Tools → NDK)
 - **Gradle** 9.4.1 (wrapped)
-
-### Clone Repositories
-
-```bash
-git clone https://github.com/yourusername/openmodels.git
-cd openmodels
-git clone https://github.com/ggml-org/llama.cpp app/src/main/cpp/llama.cpp
-```
 
 ### Build
 
@@ -495,7 +499,7 @@ git clone https://github.com/ggml-org/llama.cpp app/src/main/cpp/llama.cpp
 ./gradlew assembleDebug
 ```
 
-First build compiles all llama.cpp C++ sources (~5–10 min). Subsequent builds are incremental.
+Builds in ~1–2 minutes (no C++ compilation — Llamatik ships prebuilt binaries).
 
 ### Generate Signed APK/App Bundle
 
@@ -513,111 +517,33 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ---
 
-## llama.cpp Native Inference
+## Llamatik Integration
 
-This project uses [llama.cpp](https://github.com/ggml-org/llama.cpp) for real on-device neural network inference with GGUF format models. The native library is built directly from source via CMake's `add_subdirectory()` — no separate cross-compilation or manual `.so` copying is needed.
+This project uses [Llamatik](https://github.com/ferranpons/llamatik) for on-device neural network inference with GGUF format models. Llamatik is a Kotlin Multiplatform library that wraps llama.cpp and exposes a clean Kotlin API — no JNI boilerplate, no CMake build step.
 
-### Repository
+### Library
 
-- **URL**: https://github.com/ggml-org/llama.cpp
-- **License**: MIT
-- **Integration method**: `add_subdirectory(llama.cpp EXCLUDE_FROM_ALL)` in `app/src/main/cpp/CMakeLists.txt`
-
-### Setup
-
-#### 1. Clone llama.cpp into the cpp directory
-
-```bash
-cd app/src/main/cpp/
-git clone https://github.com/ggml-org/llama.cpp
-```
-
-The JNI bridge expects llama.cpp at `app/src/main/cpp/llama.cpp/`. This exact path is hardcoded in `CMakeLists.txt` via `add_subdirectory(llama.cpp ...)`.
-
-#### 2. Project files
-
-| File | Purpose |
-|------|---------|
-| `app/src/main/cpp/llama_jni.cpp` | JNI bridge — loads model, tokenizes, runs generation loop, streams tokens back to Kotlin via `NativeTokenCallback` |
-| `app/src/main/cpp/CMakeLists.txt` | CMake build config — links `llama_jni` against `llama`, `ggml`, `ggml-base`, `ggml-cpu` |
-| `app/build.gradle.kts` | Android NDK config — `externalNativeBuild { cmake { ... } }` + `ndk { abiFilters += arm64-v8a }` |
-
-No changes to these files are needed beyond the initial setup.
-
-### Build Configuration
-
-#### CMakeLists.txt (`app/src/main/cpp/CMakeLists.txt`)
-
-```cmake
-cmake_minimum_required(VERSION 3.22)
-project(llama_jni)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-add_subdirectory(llama.cpp EXCLUDE_FROM_ALL)
-
-add_library(llama_jni SHARED llama_jni.cpp)
-
-target_include_directories(llama_jni PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/ggml/include
-)
-
-target_link_libraries(llama_jni
-    llama
-    ggml
-    ggml-base
-    ggml-cpu
-    log
-)
-
-if(ANDROID_ABI STREQUAL "arm64-v8a")
-    target_compile_definitions(llama_jni PRIVATE GGML_USE_LLAMAFILE=1)
-endif()
-```
-
-#### build.gradle.kts (`app/build.gradle.kts`)
-
-```kotlin
-android {
-    defaultConfig {
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
-    }
-
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
-    }
-}
-```
-
-**Important**: Only `arm64-v8a` is supported. If you need other ABIs, add them to `abiFilters` — but note that `GGML_USE_LLAMAFILE` optimization is only enabled for `arm64-v8a`.
+- **Maven**: `com.llamatik:library:1.6.0`
+- **Source**: [github.com/ferranpons/llamatik](https://github.com/ferranpons/llamatik)
+- **License**: Apache 2.0
+- **Integration**: Single dependency line in `app/build.gradle.kts` (no C++ compilation, no NDK setup)
 
 ### Architecture
 
 ```
 Kotlin (GGUFInferenceEngine)
-  │  System.loadLibrary("llama_jni")
-  │  external fun nativeLoadModel(...)
-  │  external fun nativeGenerateChat(...)
-  │  external fun nativeStopGeneration(...)
-  │  external fun nativeUnloadModel(...)
+  │  com.llamatik.library.platform.LlamaBridge
+  │  ├── initGenerateModel(path)          — load GGUF model from file
+  │  ├── updateGenerateParams(...)         — temperature, top-p, top-k, maxTokens, contextLength, etc.
+  │  ├── generateStream(prompt, callback)  — blocking native call on IO dispatcher
+  │  ├── sessionReset()                    — clear KV cache between chat turns
+  │  ├── nativeCancelGenerate()            — stop the generation loop
+  │  ├── applyChatTemplate(msgs, addPrefix)— auto-format with model's chat template
+  │  └── shutdown()                        — release native resources
   ▼
-JNI (llama_jni.cpp)
-  │  llama_backend_init()          ← std::call_once (once per process)
-  │  llama_model_load_from_file()
-  │  llama_init_from_model()
-  │  llama_sampler_chain_init()    ← created fresh per generation
-  │  llama_batch_get_one()         ← auto-tracked positions
-  │  llama_decode()                ← prompt eval + token-by-token
-  │  llama_sampler_sample()        ← top_k → top_p → temp → dist/greedy
-  │  llama_token_to_piece()        ← token → string
-  │  llama_vocab_is_eog()          ← end-of-generation check
+Llamatik (KMP Library)
+  │  llama.cpp native bindings (JNI)
+  │  prebuilt .so files for arm64-v8a, armeabi-v7a, x86_64
   ▼
 llama.cpp C API
   │  ggml backend (CPU)
@@ -626,199 +552,43 @@ llama.cpp C API
 Model file (GGUF on disk, memory-mapped via mmap)
 ```
 
-### Engine Selection Flow
+### Capabilities
 
-```kotlin
-HybridModelManager.resolveFormat(modelId, modelPath)
-  → path ends with ".gguf"   → ModelFormat.GGUF
-  → GGUFInferenceEngine      → real llama.cpp inference
-```
+| Feature | Support |
+|---------|---------|
+| GGUF model loading | ✅ |
+| Streaming generation | ✅ (via `GenStream` callback) |
+| Chat template formatting | ✅ (`applyChatTemplate` — auto-detects model template) |
+| KV cache session management | ✅ (`sessionReset()` between turns) |
+| Context length control | ✅ |
+| GPU layers (Metal, CUDA) | ✅ (platform-dependent) |
+| Flash attention | ✅ |
+| Batch processing | ✅ |
+| JSON schema / grammar | ✅ |
+| Speculative decoding (MTP) | ✅ |
+| Embeddings | ✅ |
+| Multimodal (vision) | ✅ |
+| Prebuilt binaries | ✅ (arm64-v8a, armeabi-v7a, x86_64, x86_64 desktop) |
 
-All other formats (TFLITE, ONNX, UNKNOWN) route to `SimulatedInferenceEngine`.
-
-### Generation Loop (llama_jni.cpp)
-
-```
-1. tokenize prompt           → vector<llama_token>
-2. create sampler chain      → top_k + top_p + temp + dist/greedy
-3. llama_decode (prompt)     → prompt evaluation
-4. loop:
-   a. llama_sampler_sample   → pick next token
-   b. llama_vocab_is_eog     → check for end-of-generation
-   c. llama_token_to_piece   → convert token to text
-   d. JNI callback onToken   → stream to Kotlin Flow
-   e. llama_decode (1 token) → advance model state
-5. JNI callback onComplete   → signal [DONE]
-```
-
-### Common Errors and How to Fix Them
-
-#### 1. "llama.cpp native library not available"
-
-**Error in logcat**: `WTF/GGUFEngine: llama.cpp native library not available`
-
-**Cause**: `System.loadLibrary("llama_jni")` failed with `UnsatisfiedLinkError`.
-
-**Fixes**:
-- Run `git clone https://github.com/ggml-org/llama.cpp` inside `app/src/main/cpp/`
-- Run **File → Sync Project with Gradle Files** in Android Studio
-- Run **Build → Make Project** to trigger the CMake build
-- Check that `app/build/intermediates/merged_native_libs/debug/out/lib/arm64-v8a/libllama_jni.so` exists after build
-
-#### 2. "No matching function for call to 'llama_batch_get_one'"
-
-**Error in build output**:
-```
-error: no matching function for call to 'llama_batch_get_one'
-note: candidate function not viable: 1st argument ('const value_type *') would lose const qualifier
-```
-
-**Cause**: `llama_batch_get_one` expects non-const `llama_token *` but receives `const llama_token *` from a `const` lambda capture.
-
-**Fix**: The lambda capturing `tokens` must be declared `mutable`:
-```cpp
-mctx->gen_thread = std::thread([...]() mutable {
-    // ...
-    llama_batch batch = llama_batch_get_one(tokens.data(), tokens.size());
-});
-```
-
-#### 3. App crashes immediately when sending a message (SIGSEGV)
-
-**Cause**: `nativeUnloadModel` frees the model/context while a detached generation thread is still using them (use-after-free), OR `llama_backend_init` is called twice without `llama_backend_free` in between.
-
-**Fixes in `llama_jni.cpp`**:
-- Use `std::call_once` for `llama_backend_init` — initialize exactly once per process:
-  ```cpp
-  static std::once_flag backend_init_flag;
-  static void ensure_backend_init() {
-      std::call_once(backend_init_flag, []() {
-          llama_backend_init();
-      });
-  }
-  ```
-- Use an `std::atomic<bool> thread_running` flag + busy-wait in `nativeUnloadModel` instead of relying on `gen_thread.joinable()` (which is always false after `detach()`):
-  ```cpp
-  mctx->stop_requested.store(true);
-  for (int i = 0; i < 100 && mctx->thread_running.load(); i++) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  // now safe to free
-  ```
-- Clean up JNI global refs (`DeleteGlobalRef`) **before** `DetachCurrentThread`, not after.
-
-#### 4. "Tokenization failed" snackbar
-
-**Error in logcat**: `Tokenization failed or empty prompt`
-
-**Cause**: `llama_tokenize(vocab, text, len, nullptr, 0, true, false)` returns a **negative** number indicating the needed buffer size (e.g., -3 for 3 tokens). Code that checks `n_tokens <= 0` rejects this as an error.
-
-**Fix**: Take the absolute value of a negative return:
-```cpp
-int n_tokens = llama_tokenize(vocab, prompt, strlen(prompt), nullptr, 0, true, false);
-if (n_tokens == std::numeric_limits<int32_t>::min()) {
-    // overflow — prompt too long (INT32_MIN)
-    // report error
-}
-if (n_tokens < 0) {
-    n_tokens = -n_tokens;  // negative = "-n_tokens needed"
-}
-if (n_tokens == 0) {
-    // truly empty — report error
-}
-std::vector<llama_token> tokens(n_tokens);
-llama_tokenize(vocab, prompt, strlen(prompt), tokens.data(), n_tokens, true, false);
-```
-
-#### 5. llama.cpp build fails with "GGML_USE_LLAMAFILE=1" issues
-
-**Cause**: The `GGML_USE_LLAMAFILE` define is only set on the `llama_jni` target, not on the `llama`/`ggml` targets. In recent llama.cpp versions, the llamafile backend is auto-detected by the CMake build, so the explicit define on `llama_jni` is harmless but may cause redefinition warnings.
-
-**Fix**: Remove the explicit `target_compile_definitions` from `CMakeLists.txt` if llama.cpp's own CMake handles it:
-```cmake
-# Remove or comment out:
-# if(ANDROID_ABI STREQUAL "arm64-v8a")
-#     target_compile_definitions(llama_jni PRIVATE GGML_USE_LLAMAFILE=1)
-# endif()
-```
-
-#### 6. "Failed to load model" — model loads in Java but not in C++
-
-**Cause**: The model path passed from Kotlin doesn't match the actual file location. `ModelRepository.getModelPath(modelId)` returns a path under the app's internal storage (e.g., `/data/data/.../files/OpenModels/smollm_135m_q4.gguf`), which the C++ side can access.
-
-**Debug**: Add `LOGI` to print the model path in `nativeLoadModel`. Check `adb logcat -s LlamaJNI` for:
-```
-LlamaJNI: Loading model: /data/data/.../smollm_135m_q4.gguf (threads=4, ctx=2048, gpu=0)
-LlamaJNI: Model loaded, ctx=0x7b...
-```
-
-#### 7. "Prompt evaluation failed" during generation
-
-**Cause**: `llama_decode()` returned non-zero. This can happen if:
-- `llama_context_params.n_ctx` is too small for the prompt
-- The model file is corrupt (check GGUF magic bytes validation)
-- Memory pressure — the device doesn't have enough free RAM for the working set
-
-**Fixes**:
-- Ensure `n_ctx` (context size) is large enough for the prompt tokens + generated tokens
-- Check that the model file passes the GGUF magic byte check in `GGUFInferenceEngine.isValidGguf()`
-- Free other apps' memory or use a smaller model
-
-#### 8. "Decode failed at token N" mid-generation
-
-**Cause**: `llama_decode()` fails during token-by-token generation, typically returning 1 (could not find a KV slot). This means the context window is full.
-
-**Fix**: Increase `n_ctx` in the inference params, or the model has reached its maximum context length.
-
-#### 9. Linking error: undefined reference to `llama_*`
-
-**Cause**: The `llama` target is not being built or linked. This happens if `add_subdirectory(llama.cpp)` is missing or the CMake target names have changed.
-
-**Fixes**:
-- Verify `app/src/main/cpp/llama.cpp/` exists and has a `CMakeLists.txt`
-- Check the llama.cpp CMake target names — in recent versions they are:
-  - `llama` (main library)
-  - `ggml` (tensor library)
-  - `ggml-base` (base backend)
-  - `ggml-cpu` (CPU backend)
-- Run **Build → Clean Project** then **Build → Make Project**
-
-#### 10. Build takes very long (5–10 minutes)
-
-**Cause**: First build compiles all llama.cpp C++ sources (~100+ files). Subsequent builds are incremental.
-
-**Fix**: Be patient on the first build. Use `ccache` if available on your build machine for faster rebuilds.
-
-### Template Support
-
-The JNI bridge supports these chat templates, configured per model in `GGUFInferenceEngine.MODEL_TEMPLATES`:
-
-| Template | Format | Example Models |
-|----------|--------|---------------|
-| `chatml` | `<\|im_start\|>role\ncontent<\|im_end\|>\n` | SmolLM2, Qwen2.5 |
-| `llama2` | `[INST] content [/INST]` | TinyLlama, Llama 3.2 |
-| `phi` | `Question: ...\n\nAnswer: ` | Phi-1.5, Phi-2, Phi-3 Mini |
-| `gemma` | `<start_of_turn>role\ncontent<end_of_turn>` | Gemma 2 |
-
-### Sampler Chain
-
-The generation uses this sampler chain based on temperature:
+### Threading Model
 
 ```
-Temperature > 0.0:
-  top_k(topK) → top_p(topP, min_keep=1) → temp(temperature) → dist(seed)
-
-Temperature ≤ 0.0:
-  greedy()
+generateChat()
+  │
+  └── callbackFlow { ... }.flowOn(Dispatchers.Default)
+       │
+       ├── updateGenerateParams()     ← runs on Default
+       ├── sessionReset()             ← runs on Default
+       ├── launch(Dispatchers.IO) {
+       │     generateStream(prompt)   ← blocks IO thread
+       │     onDelta(token) → trySend ← non-blocking channel send
+       │   }
+       └── awaitClose { cancelGenerate() }  ← cleanup
 ```
 
-### First Build
-
-1. Clone llama.cpp: `git clone https://github.com/ggml-org/llama.cpp` into `app/src/main/cpp/`
-2. Open project in Android Studio
-3. **File → Sync Project with Gradle Files**
-4. **Build → Make Project** (first build: ~5–10 min)
-5. Connect device and **Run** (`Shift+F10`)
+- `sessionReset()` called before every generation to prevent KV cache overflow.
+- Streaming updates throttled to ~20/s in `ChatViewModel` to protect the main thread.
+- `nativeCancelGenerate()` serialized via `@Volatile` flag and dedicated dispose path.
 
 ---
 
@@ -839,7 +609,8 @@ Temperature ≤ 0.0:
 | **Coroutines** | Kotlinx Coroutines | 1.11.0 |
 | **Networking** | OkHttp | 4.12.0 |
 | **Serialization** | Kotlinx Serialization | 1.7.3 |
-| **Markdown** | Markwon (core + strikethrough) | 4.6.2 |
+| **Inference** | Llamatik (llama.cpp KMP wrapper) | 1.6.0 |
+| **Logging** | Timber | 5.0.1 |
 | **Image Loading** | Coil Compose | 2.7.0 |
 | **HTML Parsing** | Jsoup | 1.18.3 |
 | **Build System** | Android Gradle Plugin | 9.2.1 (built-in Kotlin) |

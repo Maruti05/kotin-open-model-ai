@@ -18,6 +18,7 @@ class AppPreferences(private val context: Context) {
         private val TOP_K = intPreferencesKey("top_k")
         private val MAX_TOKENS = intPreferencesKey("max_tokens")
         private val SYSTEM_PROMPT = stringPreferencesKey("system_prompt")
+        private val SYSTEM_PROMPT_ENABLED = booleanPreferencesKey("system_prompt_enabled")
         private val SHOW_THINKING = booleanPreferencesKey("show_thinking")
         private val SHOW_REASONING = booleanPreferencesKey("show_reasoning")
         private val DOWNLOADED_MODEL_IDS = stringPreferencesKey("downloaded_model_ids")
@@ -45,6 +46,10 @@ class AppPreferences(private val context: Context) {
 
     val systemPrompt: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[SYSTEM_PROMPT] ?: ""
+    }
+
+    val systemPromptEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[SYSTEM_PROMPT_ENABLED] ?: true
     }
 
     val showThinking: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -81,6 +86,10 @@ class AppPreferences(private val context: Context) {
 
     suspend fun setSystemPrompt(value: String) {
         context.dataStore.edit { prefs -> prefs[SYSTEM_PROMPT] = value }
+    }
+
+    suspend fun setSystemPromptEnabled(value: Boolean) {
+        context.dataStore.edit { prefs -> prefs[SYSTEM_PROMPT_ENABLED] = value }
     }
 
     suspend fun setShowThinking(value: Boolean) {

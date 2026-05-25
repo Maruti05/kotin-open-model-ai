@@ -26,5 +26,12 @@ local.properties
 # CMake build artifacts (auto-generated)
 app/.cxx/
 
-# llama.cpp external repo (clone manually from https://github.com/ggml-org/llama.cpp)
+# llama.cpp external repo (removed — now using Llamatik library)
 app/src/main/cpp/llama.cpp/
+
+# Build artifacts (not covered by build/ above)
+*.jar
+proguard.txt
+R.txt
+AndroidManifest.xml
+jni/

@@ -56,6 +56,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.setSystemPrompt(value) }
     }
 
+    fun setSystemPromptEnabled(value: Boolean) {
+        viewModelScope.launch { settingsRepository.setSystemPromptEnabled(value) }
+    }
+
     fun setShowThinking(value: Boolean) {
         viewModelScope.launch { settingsRepository.setShowThinking(value) }
     }

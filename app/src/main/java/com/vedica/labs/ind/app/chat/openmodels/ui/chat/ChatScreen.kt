@@ -3,6 +3,8 @@ package com.vedica.labs.ind.app.chat.openmodels.ui.chat
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,8 +24,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vedica.labs.ind.app.chat.openmodels.data.model.ChatMessage
 import com.vedica.labs.ind.app.chat.openmodels.data.model.ChatSession
@@ -266,11 +268,19 @@ private fun ColumnScope.MessagesList(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(messages.size, streamingContent) {
-        if (messages.isNotEmpty() || streamingContent.isNotEmpty()) {
-            scope.launch {
-                listState.animateScrollToItem(0)
-            }
+    // Auto-scroll to newest message. Using scrollToItem (instant) instead of animateScrollToItem
+    // because the animation was restarting on every streaming token, flooding the main thread
+    // with frame callbacks and contributing to ANRs. Split into two LaunchedEffects with
+    // independent keys so that a new message arrival scrolls even during streaming.
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.scrollToItem(0)
+        }
+    }
+
+    LaunchedEffect(streamingContent) {
+        if (streamingContent.isNotEmpty()) {
+            listState.scrollToItem(0)
         }
     }
 
@@ -312,6 +322,43 @@ private fun ColumnScope.MessagesList(
     }
 }
 
+private data class ContentSegment(
+    val type: String,  // "text" or "code"
+    val content: String,
+    val language: String? = null
+)
+
+private fun parseContentSegments(content: String): List<ContentSegment> {
+    val segments = mutableListOf<ContentSegment>()
+    val regex = Regex("```(\\w*)\\s*\\n([\\s\\S]*?)```")
+    var lastEnd = 0
+
+    for (match in regex.findAll(content)) {
+        if (match.range.first > lastEnd) {
+            val text = content.substring(lastEnd, match.range.first).trim()
+            if (text.isNotEmpty()) {
+                segments.add(ContentSegment("text", text))
+            }
+        }
+        segments.add(ContentSegment("code", match.groupValues[2].trimEnd(), match.groupValues[1].ifEmpty { null }))
+        lastEnd = match.range.last + 1
+    }
+
+    if (lastEnd < content.length) {
+        val text = content.substring(lastEnd).trim()
+        if (text.isNotEmpty()) {
+            segments.add(ContentSegment("text", text))
+        }
+    }
+
+    if (segments.isEmpty()) {
+        segments.add(ContentSegment("text", content))
+    }
+
+    return segments
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     content: String,
@@ -351,14 +398,36 @@ private fun MessageBubble(
                     shadowElevation = 1.dp
                 ) {
                     Column(
-                        modifier = Modifier.widthIn(max = 280.dp).padding(horizontal = 14.dp, vertical = 10.dp)
+                        modifier = Modifier
+                            .widthIn(max = 300.dp)
+                            .combinedClickable(
+                                onClick = {},
+                                onLongClick = { showMenu = true }
+                            )
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
-                        Text(
-                            text = content + if (isStreaming) " ▊" else "",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = textColor,
-                            lineHeight = 22.sp
-                        )
+                        val segments = remember(content) { parseContentSegments(content) }
+
+                        for (seg in segments) {
+                            when (seg.type) {
+                                "code" -> CodeBlockView(
+                                    code = seg.content,
+                                    language = seg.language
+                                )
+                                "text" -> MarkdownText(
+                                    text = seg.content + if (isStreaming && segments.size == 1) " ▊" else "",
+                                    color = textColor
+                                )
+                            }
+                        }
+
+                        if (isStreaming && segments.size > 1) {
+                            MarkdownText(
+                                text = " ▊",
+                                color = textColor
+                            )
+                        }
+
                         if (tokensPerSecond != null) {
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
@@ -370,38 +439,48 @@ private fun MessageBubble(
                     }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .align(if (isUser) Alignment.CenterStart else Alignment.CenterEnd)
-                        .offset(x = if (isUser) (-8).dp else 8.dp)
+                // Context menu on long-press
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    offset = DpOffset(
+                        x = if (isUser) (-160).dp else 0.dp,
+                        y = 0.dp
+                    )
                 ) {
-                    IconButton(
-                        onClick = { showMenu = true },
-                        modifier = Modifier.size(20.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.MoreVert,
-                            contentDescription = "More",
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Copy") },
-                            onClick = {
-                                showMenu = false
-                                copyToClipboard(context, content)
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-                            }
-                        )
-                    }
+                    DropdownMenuItem(
+                        text = { Text("Copy") },
+                        onClick = {
+                            showMenu = false
+                            copyText(context, content)
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Copy Code Blocks") },
+                        onClick = {
+                            showMenu = false
+                            val codeSegments = parseContentSegments(content)
+                                .filter { it.type == "code" }
+                                .joinToString("\n\n") { it.content }
+                            if (codeSegments.isNotEmpty()) copyText(context, codeSegments)
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.Code, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Select All") },
+                        onClick = {
+                            showMenu = false
+                            copyText(context, content)
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.SelectAll, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    )
                 }
             }
 
@@ -410,10 +489,9 @@ private fun MessageBubble(
     }
 }
 
-private fun copyToClipboard(context: Context, text: String) {
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+private fun copyText(context: Context, text: String) {
     val clip = ClipData.newPlainText("chat_message", text)
-    clipboard.setPrimaryClip(clip)
+    (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(clip)
 }
 
 @Composable

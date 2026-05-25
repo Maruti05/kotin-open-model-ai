@@ -1,5 +1,5 @@
-# Keep llama.cpp native methods
--keep class com.vedica.labs.ind.app.chat.openmodels.domain.inference.** { *; }
+# Keep Llamatik native methods
+-keep class com.llamatik.library.** { *; }
 
 # Keep Room entities
 -keep class * extends androidx.room.RoomDatabase

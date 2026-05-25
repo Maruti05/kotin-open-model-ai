@@ -14,6 +14,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 data class ChatUiState(
@@ -43,9 +44,12 @@ class ChatViewModel @Inject constructor(
     private val pageSize = 20
 
     init {
+        Timber.tag("ChatVM").d("ChatViewModel initialized")
         loadSessions()
         viewModelScope.launch {
             settingsRepository.getInferenceParams().collect { params ->
+                Timber.tag("ChatVM").d("Inference params updated: temp=%.2f, maxTokens=%d, systemPromptEnabled=%b",
+                    params.temperature, params.maxTokens, params.systemPromptEnabled)
                 _state.update { it.copy(params = params) }
             }
         }
@@ -111,7 +115,17 @@ class ChatViewModel @Inject constructor(
     fun sendMessage(text: String) {
         val sessionId = _state.value.activeSessionId
         val params = _state.value.params
-        if (text.isBlank() || _state.value.isGenerating) return
+        val currentState = _state.value
+        if (text.isBlank() || currentState.isGenerating) {
+            Timber.tag("ChatVM").w("sendMessage blocked: blank=%b, generating=%b", text.isBlank(), currentState.isGenerating)
+            return
+        }
+        if (!modelManager.isLoaded) {
+            Timber.tag("ChatVM").w("sendMessage blocked: no model loaded")
+            _state.update { it.copy(error = "No model loaded. Download and load a model first.") }
+            return
+        }
+        Timber.tag("ChatVM").i("sendMessage: len=%d, session=%s", text.length, sessionId)
 
         viewModelScope.launch {
             try {
@@ -120,9 +134,11 @@ class ChatViewModel @Inject constructor(
                     val modelName = modelManager.activeModelId ?: "local-model"
                     val session = chatRepository.createSession(modelName)
                     activeSessionId = session.id
+                    Timber.tag("ChatVM").d("Created new session: %s", activeSessionId)
                     _state.update { it.copy(activeSessionId = activeSessionId) }
                 }
 
+                Timber.tag("ChatVM").d("Inserting user message")
                 val userMessage = chatRepository.insertMessage(activeSessionId, "user", text)
                 val currentMessages = _state.value.messages + userMessage
                 _state.update { it.copy(messages = currentMessages, isGenerating = true, streamingContent = "", error = null) }
@@ -132,7 +148,7 @@ class ChatViewModel @Inject constructor(
                 val recentMessages = (allMsgs + listOf(userMessage)).takeLast(30)
 
                 val inferenceMessages = mutableListOf<InferenceChatMessage>()
-                if (params.systemPrompt.isNotBlank()) {
+                if (params.systemPromptEnabled && params.systemPrompt.isNotBlank()) {
                     inferenceMessages.add(InferenceChatMessage("system", params.systemPrompt))
                 }
                 inferenceMessages.addAll(recentMessages.map {
@@ -141,7 +157,6 @@ class ChatViewModel @Inject constructor(
 
                 // RAG context from files
                 val fileContexts = modelRepository.getAllFileContexts()
-                // Build RAG context (simplified)
                 var ragContext = ""
                 fileContexts.firstOrNull()?.let { files ->
                     if (files.isNotEmpty()) {
@@ -155,28 +170,61 @@ class ChatViewModel @Inject constructor(
 
                 val template = modelManager.currentTemplate
                 val contentBuilder = StringBuilder()
+                var completed = false
+                // Throttle UI updates to ~20/s (50ms interval) to prevent the main thread
+                // from being overwhelmed by rapid Compose relayouts triggered by every token.
+                // Without throttling, a model generating 50+ tokens/s causes the frame backlog
+                // to exceed 5s, resulting in an "Input dispatching timed out" ANR.
+                var lastUiUpdate = 0L
+                val uiUpdateInterval = 50L
+
+                Timber.tag("ChatVM").d("Starting generation: inferenceMsgs=%d, rag=%b, template=%s", fullMessages.size, ragContext.isNotBlank(), template)
 
                 generationJob = viewModelScope.launch {
                     try {
                         modelManager.generateChat(fullMessages, template, params).collect { token ->
                             if (token == "[DONE]") {
-                                val finalContent = contentBuilder.toString()
-                                chatRepository.insertMessage(activeSessionId, "assistant", finalContent)
-                                val updatedMessages = _state.value.messages + ChatMessage(
-                                    id = "",
-                                    sessionId = activeSessionId,
-                                    role = "assistant",
-                                    content = finalContent,
-                                    timestamp = System.currentTimeMillis()
-                                )
-                                _state.update { it.copy(messages = updatedMessages, isGenerating = false, streamingContent = "") }
+                                Timber.tag("ChatVM").d("Generation [DONE] received, content=%d chars", contentBuilder.length)
+                                if (!completed) {
+                                    completed = true
+                                    val finalContent = contentBuilder.toString()
+                                    val savedMessage = chatRepository.insertMessage(activeSessionId, "assistant", finalContent)
+                                    val updatedMessages = _state.value.messages + savedMessage
+                                    _state.update { it.copy(messages = updatedMessages, isGenerating = false, streamingContent = "") }
+                                }
                             } else {
                                 contentBuilder.append(token)
-                                _state.update { it.copy(streamingContent = contentBuilder.toString()) }
+                                val now = System.currentTimeMillis()
+                                if (now - lastUiUpdate >= uiUpdateInterval) {
+                                    lastUiUpdate = now
+                                    _state.update { it.copy(streamingContent = contentBuilder.toString()) }
+                                }
                             }
                         }
+                        // Flush the final content to UI
+                        if (!completed && contentBuilder.isNotEmpty()) {
+                            _state.update { it.copy(streamingContent = contentBuilder.toString()) }
+                        }
+                        // Flow completed without [DONE] - save whatever we have
+                        if (!completed && contentBuilder.isNotEmpty()) {
+                            Timber.tag("ChatVM").w("Flow ended without [DONE], saving %d chars", contentBuilder.length)
+                            completed = true
+                            val finalContent = contentBuilder.toString()
+                            val savedMessage = chatRepository.insertMessage(activeSessionId, "assistant", finalContent)
+                            val updatedMessages = _state.value.messages + savedMessage
+                            _state.update { it.copy(messages = updatedMessages, isGenerating = false, streamingContent = "") }
+                        }
                     } catch (e: Exception) {
+                        Timber.tag("ChatVM").e(e, "Generation failed after %d chars", contentBuilder.length)
+                        if (!completed && contentBuilder.isNotEmpty()) {
+                            chatRepository.insertMessage(activeSessionId, "assistant", contentBuilder.toString())
+                        }
                         _state.update { it.copy(isGenerating = false, error = e.message) }
+                    } finally {
+                        if (!completed) {
+                            Timber.tag("ChatVM").d("Generation finally, not completed, resetting state")
+                            _state.update { it.copy(isGenerating = false) }
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -186,11 +234,19 @@ class ChatViewModel @Inject constructor(
     }
 
     fun stopGeneration() {
+        Timber.tag("ChatVM").d("stopGeneration called")
         generationJob?.cancel()
+        val prevJob = generationJob
         generationJob = null
         viewModelScope.launch {
-            modelManager.stopGeneration()
+            try {
+                modelManager.stopGeneration()
+                Timber.tag("ChatVM").d("stopGeneration OK")
+            } catch (e: Exception) {
+                Timber.tag("ChatVM").w(e, "stopGeneration exception")
+            }
             _state.update { it.copy(isGenerating = false) }
+            prevJob?.cancel()
         }
     }
 

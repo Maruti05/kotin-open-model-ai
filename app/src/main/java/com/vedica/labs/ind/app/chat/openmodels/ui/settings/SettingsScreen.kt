@@ -181,23 +181,35 @@ fun SettingsScreen(
                 icon = Icons.Outlined.TextFields,
                 title = "System Prompt"
             ) {
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = params.systemPrompt,
-                    onValueChange = { viewModel.setSystemPrompt(it) },
-                    modifier = Modifier.fillMaxWidth().height(120.dp),
-                    placeholder = { Text("Custom system prompt...") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NeonCyan,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                Spacer(modifier = Modifier.height(8.dp))
+                SettingsToggleRow(
+                    label = "Enable System Prompt",
+                    subtitle = "When off, no system prompt is sent to the model",
+                    checked = params.systemPromptEnabled,
+                    onCheckedChange = { viewModel.setSystemPromptEnabled(it) }
+                )
+                if (params.systemPromptEnabled) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant
                     )
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "${params.systemPrompt.length} characters",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                    OutlinedTextField(
+                        value = params.systemPrompt,
+                        onValueChange = { viewModel.setSystemPrompt(it) },
+                        modifier = Modifier.fillMaxWidth().height(120.dp),
+                        placeholder = { Text("Custom system prompt...") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonCyan,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${params.systemPrompt.length} characters",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 

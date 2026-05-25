@@ -15,13 +15,14 @@ class SettingsRepository @Inject constructor(
         combine(preferences.temperature, preferences.topP, preferences.topK, preferences.maxTokens) { temp, p, k, tokens ->
             InferenceParams(
                 temperature = temp, topP = p, topK = k, maxTokens = tokens,
-                systemPrompt = "", showThinking = false, showReasoning = false
+                systemPrompt = "", systemPromptEnabled = true, showThinking = false, showReasoning = false
             )
         },
-        preferences.systemPrompt, preferences.showThinking, preferences.showReasoning
-    ) { params, prompt, thinking, reasoning ->
+        preferences.systemPrompt, preferences.systemPromptEnabled, preferences.showThinking, preferences.showReasoning
+    ) { params, prompt, promptEnabled, thinking, reasoning ->
         params.copy(
-            systemPrompt = prompt, showThinking = thinking, showReasoning = reasoning
+            systemPrompt = prompt, systemPromptEnabled = promptEnabled,
+            showThinking = thinking, showReasoning = reasoning
         )
     }
 
@@ -32,6 +33,7 @@ class SettingsRepository @Inject constructor(
     suspend fun setTopK(value: Int) = preferences.setTopK(value)
     suspend fun setMaxTokens(value: Int) = preferences.setMaxTokens(value)
     suspend fun setSystemPrompt(value: String) = preferences.setSystemPrompt(value)
+    suspend fun setSystemPromptEnabled(value: Boolean) = preferences.setSystemPromptEnabled(value)
     suspend fun setShowThinking(value: Boolean) = preferences.setShowThinking(value)
     suspend fun setShowReasoning(value: Boolean) = preferences.setShowReasoning(value)
     suspend fun setThemeMode(mode: String) = preferences.setThemeMode(mode)
