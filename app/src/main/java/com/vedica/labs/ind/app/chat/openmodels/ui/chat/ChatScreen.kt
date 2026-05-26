@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -29,9 +30,12 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vedica.labs.ind.app.chat.openmodels.data.model.ChatMessage
 import com.vedica.labs.ind.app.chat.openmodels.data.model.ChatSession
+import com.vedica.labs.ind.app.chat.openmodels.domain.parser.LlmOutputParser
+import com.vedica.labs.ind.app.chat.openmodels.domain.parser.SegmentType
 import com.vedica.labs.ind.app.chat.openmodels.ui.components.InfoGuard
 import com.vedica.labs.ind.app.chat.openmodels.ui.theme.*
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -66,7 +70,11 @@ fun ChatScreen(
                 TopAppBar(
                     title = {
                         Column {
-                            Text("Chat", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                text = state.activeModelName ?: "Chat",
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1
+                            )
                             if (state.isGenerating) {
                                 Text(
                                     text = "Generating...",
@@ -137,7 +145,9 @@ fun ChatScreen(
                             streamingContent = state.streamingContent,
                             isGenerating = state.isGenerating,
                             canLoadMore = !state.hasReachedMax,
-                            onLoadMore = { viewModel.loadMoreMessages() }
+                            onLoadMore = { viewModel.loadMoreMessages() },
+                            showThinking = state.params.showThinking,
+                            showReasoning = state.params.showReasoning
                         )
                         InputBar(
                             isGenerating = state.isGenerating,
@@ -263,7 +273,9 @@ private fun ColumnScope.MessagesList(
     streamingContent: String,
     isGenerating: Boolean,
     canLoadMore: Boolean,
-    onLoadMore: () -> Unit
+    onLoadMore: () -> Unit,
+    showThinking: Boolean,
+    showReasoning: Boolean
 ) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -296,7 +308,13 @@ private fun ColumnScope.MessagesList(
     ) {
         if (streamingContent.isNotEmpty()) {
             item(key = "streaming") {
-                MessageBubble(content = streamingContent, isUser = false, isStreaming = true)
+                MessageBubble(
+                    content = streamingContent,
+                    isUser = false,
+                    isStreaming = true,
+                    showThinking = showThinking,
+                    showReasoning = showReasoning
+                )
             }
         }
 
@@ -305,7 +323,9 @@ private fun ColumnScope.MessagesList(
                 content = message.content,
                 isUser = message.isUser,
                 isStreaming = false,
-                tokensPerSecond = message.tokensPerSecond
+                tokensPerSecond = message.tokensPerSecond,
+                showThinking = showThinking,
+                showReasoning = showReasoning
             )
         }
 
@@ -322,49 +342,15 @@ private fun ColumnScope.MessagesList(
     }
 }
 
-private data class ContentSegment(
-    val type: String,  // "text" or "code"
-    val content: String,
-    val language: String? = null
-)
-
-private fun parseContentSegments(content: String): List<ContentSegment> {
-    val segments = mutableListOf<ContentSegment>()
-    val regex = Regex("```(\\w*)\\s*\\n([\\s\\S]*?)```")
-    var lastEnd = 0
-
-    for (match in regex.findAll(content)) {
-        if (match.range.first > lastEnd) {
-            val text = content.substring(lastEnd, match.range.first).trim()
-            if (text.isNotEmpty()) {
-                segments.add(ContentSegment("text", text))
-            }
-        }
-        segments.add(ContentSegment("code", match.groupValues[2].trimEnd(), match.groupValues[1].ifEmpty { null }))
-        lastEnd = match.range.last + 1
-    }
-
-    if (lastEnd < content.length) {
-        val text = content.substring(lastEnd).trim()
-        if (text.isNotEmpty()) {
-            segments.add(ContentSegment("text", text))
-        }
-    }
-
-    if (segments.isEmpty()) {
-        segments.add(ContentSegment("text", content))
-    }
-
-    return segments
-}
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     content: String,
     isUser: Boolean,
     isStreaming: Boolean = false,
-    tokensPerSecond: Double? = null
+    tokensPerSecond: Double? = null,
+    showThinking: Boolean = true,
+    showReasoning: Boolean = true
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -392,6 +378,13 @@ private fun MessageBubble(
 
             Box {
                 Surface(
+                    modifier = Modifier.combinedClickable(
+                        onClick = {},
+                        onLongClick = {
+                            Timber.tag("ChatBubble").d("Long press detected, showMenu=%b", showMenu)
+                            showMenu = true
+                        }
+                    ),
                     shape = shape,
                     color = bgColor,
                     tonalElevation = if (isUser) 0.dp else 1.dp,
@@ -400,23 +393,38 @@ private fun MessageBubble(
                     Column(
                         modifier = Modifier
                             .widthIn(max = 300.dp)
-                            .combinedClickable(
-                                onClick = {},
-                                onLongClick = { showMenu = true }
-                            )
                             .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
-                        val segments = remember(content) { parseContentSegments(content) }
+                        val parser = remember { LlmOutputParser() }
+                        val segments = remember(content, showThinking, showReasoning) {
+                            parser.parse(content, showThinking, showReasoning)
+                        }
 
                         for (seg in segments) {
                             when (seg.type) {
-                                "code" -> CodeBlockView(
-                                    code = seg.content,
-                                    language = seg.language
-                                )
-                                "text" -> MarkdownText(
+                                SegmentType.TEXT -> MarkdownText(
                                     text = seg.content + if (isStreaming && segments.size == 1) " ▊" else "",
                                     color = textColor
+                                )
+                                SegmentType.CODE_BLOCK -> CodeBlockView(
+                                    code = seg.content,
+                                    language = seg.metadata["language"]
+                                )
+                                SegmentType.THINKING, SegmentType.REASONING -> MarkdownText(
+                                    text = seg.content,
+                                    color = textColor.copy(alpha = 0.6f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(8.dp)
+                                        .background(
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .padding(8.dp)
+                                )
+                                SegmentType.TOOL_CALL -> MarkdownText(
+                                    text = seg.content,
+                                    color = WarningAmber
                                 )
                             }
                         }
@@ -462,9 +470,8 @@ private fun MessageBubble(
                         text = { Text("Copy Code Blocks") },
                         onClick = {
                             showMenu = false
-                            val codeSegments = parseContentSegments(content)
-                                .filter { it.type == "code" }
-                                .joinToString("\n\n") { it.content }
+                            val codeSegments = LlmOutputParser().extractCodeBlocks(content)
+                                .joinToString("\n\n") { it.second }
                             if (codeSegments.isNotEmpty()) copyText(context, codeSegments)
                         },
                         leadingIcon = {

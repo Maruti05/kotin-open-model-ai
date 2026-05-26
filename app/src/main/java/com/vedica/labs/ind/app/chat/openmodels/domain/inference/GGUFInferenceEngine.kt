@@ -6,6 +6,7 @@ import android.os.Debug
 import com.llamatik.library.platform.GenStream
 import com.llamatik.library.platform.LlamaBridge
 import com.vedica.labs.ind.app.chat.openmodels.data.model.InferenceParams
+import com.vedica.labs.ind.app.chat.openmodels.data.model.ModelCatalog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.awaitClose
@@ -75,7 +76,8 @@ class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
         }
 
         _currentModelId = modelId
-        _currentTemplate = "auto"
+        _currentTemplate = ModelCatalog.getModelInfo(modelId)?.promptTemplate ?: "auto"
+        Timber.tag("GGUF").d("Using prompt template: %s", _currentTemplate)
 
         try {
             val threads = (hyperparams?.get("threads") as? Number)?.toInt() ?: 4
@@ -166,7 +168,7 @@ class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
             Timber.tag("GGUF").d("Messages before truncation: %d, after: %d, maxPromptTokens: %d",
                 messages.size, safeMessages.size, maxPromptTokens)
 
-            val prompt = buildPrompt(safeMessages)
+            val prompt = buildPrompt(safeMessages, template)
             Timber.tag("GGUF").d("Prompt length: %d chars (~%d tokens)", prompt.length, prompt.length / 4)
 
             // Reset the native KV cache between chat turns. Without this, the internal
@@ -305,7 +307,7 @@ class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
         return result
     }
 
-    private fun buildPrompt(messages: List<ChatMessage>): String {
+    private fun buildPrompt(messages: List<ChatMessage>, template: String? = null): String {
         try {
             val pairs = messages.map { it.role to it.content }
             val rendered = LlamaBridge.applyChatTemplate(pairs, addAssistantPrefix = true)
@@ -314,9 +316,26 @@ class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
                 return rendered
             }
         } catch (e: Exception) {
-            Timber.tag("GGUF").w(e, "applyChatTemplate failed, falling back to ChatML")
+            Timber.tag("GGUF").w(e, "applyChatTemplate failed")
         }
 
+        // Fallback based on template hint
+        if (template == "phi") {
+            Timber.tag("GGUF").d("Using Phi template fallback")
+            val sb = StringBuilder()
+            messages.forEach { msg ->
+                when (msg.role) {
+                    "system" -> sb.append("${msg.content}\n\n")
+                    "user" -> sb.append("Question: ${msg.content}\n\n")
+                    "assistant" -> sb.append("Answer: ${msg.content}\n\n")
+                }
+            }
+            sb.append("Answer: ")
+            return sb.toString()
+        }
+
+        // Default ChatML fallback
+        Timber.tag("GGUF").d("Falling back to ChatML template")
         val sb = StringBuilder()
         messages.forEach { msg ->
             when (msg.role) {

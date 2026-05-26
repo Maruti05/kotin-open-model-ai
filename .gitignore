@@ -30,6 +30,7 @@ app/.cxx/
 app/src/main/cpp/llama.cpp/
 
 # Build artifacts (not covered by build/ above)
+app/release/
 *.jar
 proguard.txt
 R.txt

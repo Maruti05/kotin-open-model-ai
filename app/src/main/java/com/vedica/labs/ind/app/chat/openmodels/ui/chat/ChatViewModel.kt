@@ -26,7 +26,8 @@ data class ChatUiState(
     val isLoadingSessions: Boolean = true,
     val error: String? = null,
     val hasReachedMax: Boolean = false,
-    val params: InferenceParams = InferenceParams()
+    val params: InferenceParams = InferenceParams(),
+    val activeModelName: String? = null
 )
 
 @HiltViewModel
@@ -45,6 +46,7 @@ class ChatViewModel @Inject constructor(
 
     init {
         Timber.tag("ChatVM").d("ChatViewModel initialized")
+        _state.update { it.copy(activeModelName = modelManager.activeModelId) }
         loadSessions()
         viewModelScope.launch {
             settingsRepository.getInferenceParams().collect { params ->
