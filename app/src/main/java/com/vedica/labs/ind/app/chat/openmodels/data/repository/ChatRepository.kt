@@ -28,20 +28,6 @@ class ChatRepository @Inject constructor(
         }
     }
 
-    suspend fun getSessionById(sessionId: String): ChatSession? {
-        val entity = sessionDao.getSessionById(sessionId) ?: return null
-        val count = messageDao.getMessageCount(sessionId)
-        val lastPreview = messageDao.getLastAssistantMessage(sessionId)
-        return ChatSession(
-            id = entity.id,
-            modelName = entity.modelName,
-            createdAt = entity.createdAt,
-            systemPromptOverride = entity.systemPromptOverride,
-            messageCount = count,
-            lastPreview = lastPreview
-        )
-    }
-
     suspend fun createSession(modelName: String, systemPromptOverride: String? = null): ChatSession {
         val session = ChatSessionEntity(
             id = UUID.randomUUID().toString(),
@@ -62,25 +48,12 @@ class ChatRepository @Inject constructor(
         sessionDao.deleteSessionById(sessionId)
     }
 
-    suspend fun deleteAllSessions() {
-        // Would need a DAO method for this
-    }
-
-    fun getMessagesBySession(sessionId: String): Flow<List<ChatMessage>> =
-        messageDao.getMessagesBySession(sessionId).map { entities ->
-            entities.map { it.toDomain() }
-        }
-
     suspend fun getMessagesPaginated(sessionId: String, limit: Int, offset: Int): List<ChatMessage> {
         return messageDao.getMessagesPaginated(sessionId, limit, offset).map { it.toDomain() }
     }
 
     suspend fun getMessageCount(sessionId: String): Int {
         return messageDao.getMessageCount(sessionId)
-    }
-
-    suspend fun insertMessage(message: ChatMessage) {
-        messageDao.insertMessage(message.toEntity())
     }
 
     suspend fun insertMessage(

@@ -46,7 +46,7 @@ class ModelDownloader @Inject constructor() {
                 throw Exception("Server returned HTTP ${response.code}")
             }
 
-            val body = response.body ?: throw Exception("Empty response body")
+            val body = response.body
             val contentLength = body.contentLength()
             val actualTotal = if (contentLength > 0) contentLength else totalBytes
             val inputStream = body.byteStream()

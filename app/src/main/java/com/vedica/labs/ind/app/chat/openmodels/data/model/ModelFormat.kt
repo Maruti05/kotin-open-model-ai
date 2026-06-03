@@ -14,7 +14,7 @@ enum class ModelFormat {
             }
         }
 
-        fun fromFileSize(sizeBytes: Long): ModelFormat {
+        fun fromFileSize(): ModelFormat {
             return GGUF
         }
     }

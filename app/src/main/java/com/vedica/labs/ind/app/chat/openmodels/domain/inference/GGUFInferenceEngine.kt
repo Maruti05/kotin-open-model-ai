@@ -379,7 +379,6 @@ class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
             val usedMem = totalMem - freeMem
             val nativeHeap = Debug.getNativeHeapSize()
             val nativeAllocated = Debug.getNativeHeapAllocatedSize()
-            val nativeFree = Debug.getNativeHeapFreeSize()
 
             Timber.tag("GGUF").d("Memory [%s]: JVM: %s/%s used/%s max | Native: %s alloc/%s size",
                 tag,

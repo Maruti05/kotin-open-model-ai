@@ -1,13 +1,13 @@
 package com.vedica.labs.ind.app.chat.openmodels.domain.inference
 
 import com.vedica.labs.ind.app.chat.openmodels.data.model.InferenceParams
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.coroutineContext
 
 @Singleton
 class SimulatedInferenceEngine @Inject constructor() : InferenceEngine {
@@ -71,7 +71,7 @@ class SimulatedInferenceEngine @Inject constructor() : InferenceEngine {
 
         val words = response.split(" ").take(params.maxTokens)
         for (word in words) {
-            if (!coroutineContext.isActive) break
+            if (!currentCoroutineContext().isActive) break
             val jitter = (Math.random() * baseDelayMs * 0.5).toLong()
             delay(baseDelayMs + jitter)
             emit("$word ")

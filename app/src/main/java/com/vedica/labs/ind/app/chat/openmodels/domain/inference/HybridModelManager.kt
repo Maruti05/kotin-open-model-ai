@@ -41,7 +41,7 @@ class HybridModelManager @Inject constructor(
             throw Exception("Model file not found at: $modelPath")
         }
 
-        val format = resolveFormat(modelId, modelPath)
+        val format = resolveFormat(modelPath)
         Timber.tag("HybridMgr").d("Resolved format: %s for %s", format, modelId)
         val engine = when (format) {
             ModelFormat.GGUF -> {
@@ -112,7 +112,7 @@ class HybridModelManager @Inject constructor(
         _activeModelId = null
     }
 
-    private fun resolveFormat(modelId: String, modelPath: String): ModelFormat {
+    private fun resolveFormat(modelPath: String): ModelFormat {
         val ext = modelPath.substringAfterLast('.', "")
         val fromExt = ModelFormat.fromExtension(".$ext")
         if (fromExt != ModelFormat.UNKNOWN) {
@@ -123,7 +123,7 @@ class HybridModelManager @Inject constructor(
         return try {
             val file = File(modelPath)
             if (file.exists()) {
-                val sizeFormat = ModelFormat.fromFileSize(file.length())
+                val sizeFormat = ModelFormat.fromFileSize()
                 Timber.tag("HybridMgr").d("Format from file size: %s", sizeFormat)
                 sizeFormat
             } else {
