@@ -7,13 +7,19 @@ import android.os.Environment
 import android.os.StatFs
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.vedica.labs.ind.app.chat.openmodels.data.model.*
+import com.vedica.labs.ind.app.chat.openmodels.data.model.ModelCatalog
+import com.vedica.labs.ind.app.chat.openmodels.data.model.ModelDownloadState
 import com.vedica.labs.ind.app.chat.openmodels.data.repository.ModelRepository
 import com.vedica.labs.ind.app.chat.openmodels.domain.inference.HybridModelManager
 import com.vedica.labs.ind.app.chat.openmodels.domain.util.HardwareChecker
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 enum class DownloadFilter { ALL, DOWNLOADED, NOT_DOWNLOADED }
@@ -173,6 +179,10 @@ class ModelManagerViewModel @Inject constructor(
             val totalBytes = ((model["sizeMb"] as? Number)?.toDouble() ?: 1500.0) * 1024 * 1024
             modelRepository.startDownload(modelId, downloadUrl, totalBytes.toLong())
         }
+    }
+
+    fun cancelDownload(modelId: String) {
+        modelRepository.cancelDownload(modelId)
     }
 
     fun retryDownload(modelId: String) {

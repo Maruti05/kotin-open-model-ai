@@ -1,6 +1,10 @@
 package com.vedica.labs.ind.app.chat.openmodels.data.local.dao
 
-import androidx.room.*
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
 import com.vedica.labs.ind.app.chat.openmodels.data.local.entity.ChatSessionEntity
 import kotlinx.coroutines.flow.Flow
 

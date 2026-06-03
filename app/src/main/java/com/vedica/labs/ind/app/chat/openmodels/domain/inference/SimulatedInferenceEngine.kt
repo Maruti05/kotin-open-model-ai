@@ -4,11 +4,10 @@ import com.vedica.labs.ind.app.chat.openmodels.data.model.InferenceParams
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.isActive
-import kotlin.math.roundToInt
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.coroutineContext
 
 @Singleton
 class SimulatedInferenceEngine @Inject constructor() : InferenceEngine {

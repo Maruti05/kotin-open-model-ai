@@ -9,7 +9,11 @@ import com.vedica.labs.ind.app.chat.openmodels.data.repository.BenchmarkReposito
 import com.vedica.labs.ind.app.chat.openmodels.domain.benchmark.BenchmarkRunner
 import com.vedica.labs.ind.app.chat.openmodels.domain.util.HardwareChecker
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 

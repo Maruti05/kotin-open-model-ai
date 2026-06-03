@@ -1,32 +1,87 @@
 package com.vedica.labs.ind.app.chat.openmodels.ui.settings
 
 import android.content.Intent
+import android.os.Build
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Gavel
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import com.vedica.labs.ind.app.chat.openmodels.data.model.InferenceParams
 import com.vedica.labs.ind.app.chat.openmodels.data.model.PromptPreset
 import com.vedica.labs.ind.app.chat.openmodels.ui.components.StyledCard
-import com.vedica.labs.ind.app.chat.openmodels.ui.theme.*
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.NeonCyan
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.SuccessGreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    viewModel: SettingsViewModel = hiltViewModel()
+    viewModel: SettingsViewModel = hiltViewModel(
+        checkNotNull<ViewModelStoreOwner>(
+            LocalViewModelStoreOwner.current
+        ) {
+                "No ViewModelStoreOwner was provided via LocalViewModelStoreOwner"
+            }, null
+    )
 ) {
     val params by viewModel.inferenceParams.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
@@ -36,7 +91,10 @@ fun SettingsScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 16.dp)
+            .then(
+                if (Build.VERSION.SDK_INT >= 35) Modifier.statusBarsPadding() else Modifier
+            ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
     ) {
@@ -134,6 +192,7 @@ fun SettingsScreen(
                 )
                 ParameterSlider(
                     title = "Temperature",
+                    description = "Controls randomness in responses. Lower values (0.1-0.5) make output more focused and deterministic. Higher values (1.0-2.0) produce more creative and varied results.",
                     value = params.temperature.toFloat(),
                     valueRange = 0.0f..2.0f,
                     displayValue = "%.2f".format(params.temperature),
@@ -145,6 +204,7 @@ fun SettingsScreen(
                 )
                 ParameterSlider(
                     title = "Top-P",
+                    description = "Nucleus sampling — considers only the top tokens whose cumulative probability reaches this threshold. Lower values (0.1-0.5) make output more focused. Higher values (0.8-1.0) allow more diversity.",
                     value = params.topP.toFloat(),
                     valueRange = 0.0f..1.0f,
                     displayValue = "%.2f".format(params.topP),
@@ -156,6 +216,7 @@ fun SettingsScreen(
                 )
                 ParameterSlider(
                     title = "Top-K",
+                    description = "Limits the model to the K most likely next tokens at each step. Lower values (1-20) produce more predictable text. Higher values (40-100) allow more surprising choices.",
                     value = params.topK.toFloat(),
                     valueRange = 1f..100f,
                     displayValue = "${params.topK}",
@@ -167,6 +228,7 @@ fun SettingsScreen(
                 )
                 ParameterSlider(
                     title = "Max Tokens",
+                    description = "Maximum number of tokens (words/punctuation marks) the model can generate in a single response. Higher values allow longer replies but use more memory and time.",
                     value = params.maxTokens.toFloat(),
                     valueRange = 64f..2048f,
                     displayValue = "${params.maxTokens}",
@@ -386,22 +448,56 @@ private fun SettingsSectionCard(
 @Composable
 private fun ParameterSlider(
     title: String,
+    description: String? = null,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
     displayValue: String,
     onValueChange: (Float) -> Unit
 ) {
+    var showInfoDialog by remember { mutableStateOf(false) }
+
+    if (showInfoDialog && description != null) {
+        AlertDialog(
+            onDismissRequest = { showInfoDialog = false },
+            title = { Text(title, fontWeight = FontWeight.Bold) },
+            text = { Text(description) },
+            confirmButton = {
+                TextButton(onClick = { showInfoDialog = false }) {
+                    Text("Got it")
+                }
+            }
+        )
+    }
+
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (description != null) {
+                    IconButton(
+                        onClick = { showInfoDialog = true },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Info,
+                            contentDescription = "Info about $title",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
             Surface(
                 shape = RoundedCornerShape(6.dp),
                 color = NeonCyan.copy(alpha = 0.12f)

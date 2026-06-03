@@ -6,14 +6,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.vedica.labs.ind.app.chat.openmodels.ui.theme.NeonCyan
 import kotlin.math.exp
-import kotlin.math.pow
-import kotlin.math.sqrt
 
 enum class CurveType { TEMPERATURE, TOP_P, TOP_K, MAX_TOKENS }
 

@@ -8,14 +8,18 @@ import com.vedica.labs.ind.app.chat.openmodels.data.model.InferenceParams
 import com.vedica.labs.ind.app.chat.openmodels.data.repository.ChatRepository
 import com.vedica.labs.ind.app.chat.openmodels.data.repository.ModelRepository
 import com.vedica.labs.ind.app.chat.openmodels.data.repository.SettingsRepository
-import com.vedica.labs.ind.app.chat.openmodels.domain.inference.ChatMessage as InferenceChatMessage
 import com.vedica.labs.ind.app.chat.openmodels.domain.inference.HybridModelManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
+import com.vedica.labs.ind.app.chat.openmodels.domain.inference.ChatMessage as InferenceChatMessage
 
 data class ChatUiState(
     val sessions: List<ChatSession> = emptyList(),

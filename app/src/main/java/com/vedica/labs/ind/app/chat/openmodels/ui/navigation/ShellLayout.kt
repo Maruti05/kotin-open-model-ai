@@ -1,27 +1,46 @@
 package com.vedica.labs.ind.app.chat.openmodels.ui.navigation
 
-import androidx.compose.animation.*
+import android.os.Build
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.vedica.labs.ind.app.chat.openmodels.ui.chat.ChatScreen
 import com.vedica.labs.ind.app.chat.openmodels.ui.dashboard.DashboardScreen
 import com.vedica.labs.ind.app.chat.openmodels.ui.modelmanager.ModelManagerScreen
 import com.vedica.labs.ind.app.chat.openmodels.ui.settings.SettingsScreen
-import com.vedica.labs.ind.app.chat.openmodels.ui.theme.*
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.TabCyan
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.TabGreen
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.TabIndigo
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.TabPurple
 
 enum class Screen(val label: String, val icon: ImageVector, val accentColor: androidx.compose.ui.graphics.Color) {
     TELEMETRY("Telemetry", Icons.Outlined.Speed, TabCyan),
@@ -34,7 +53,14 @@ enum class Screen(val label: String, val icon: ImageVector, val accentColor: and
 fun ShellLayout() {
     var selectedScreen by remember { mutableStateOf(Screen.CHAT) }
 
+    val contentInsets = if (Build.VERSION.SDK_INT >= 35) {
+        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
+    } else {
+        ScaffoldDefaults.contentWindowInsets
+    }
+
     Scaffold(
+        contentWindowInsets = contentInsets,
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.background,
@@ -71,7 +97,24 @@ fun ShellLayout() {
             AnimatedContent(
                 targetState = selectedScreen,
                 transitionSpec = {
-                    fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(200))
+                    val direction = targetState.ordinal - initialState.ordinal
+                    if (direction > 0) {
+                        slideInHorizontally(
+                            animationSpec = tween(300),
+                            initialOffsetX = { fullWidth -> fullWidth }
+                        ) togetherWith slideOutHorizontally(
+                            animationSpec = tween(300),
+                            targetOffsetX = { fullWidth -> -fullWidth }
+                        )
+                    } else {
+                        slideInHorizontally(
+                            animationSpec = tween(300),
+                            initialOffsetX = { fullWidth -> -fullWidth }
+                        ) togetherWith slideOutHorizontally(
+                            animationSpec = tween(300),
+                            targetOffsetX = { fullWidth -> fullWidth }
+                        )
+                    }
                 },
                 label = "screen_transition"
             ) { screen ->

@@ -3,10 +3,27 @@ package com.vedica.labs.ind.app.chat.openmodels.ui.chat
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import androidx.compose.foundation.ExperimentalFoundationApi
+import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -14,10 +31,47 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -25,28 +79,53 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import com.vedica.labs.ind.app.chat.openmodels.data.model.ChatMessage
 import com.vedica.labs.ind.app.chat.openmodels.data.model.ChatSession
 import com.vedica.labs.ind.app.chat.openmodels.domain.parser.LlmOutputParser
 import com.vedica.labs.ind.app.chat.openmodels.domain.parser.SegmentType
 import com.vedica.labs.ind.app.chat.openmodels.ui.components.InfoGuard
-import com.vedica.labs.ind.app.chat.openmodels.ui.theme.*
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.DarkObsidian
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.ErrorRed
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.NeonCyan
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.UserBubbleIndigo
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.WarningAmber
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    viewModel: ChatViewModel = hiltViewModel()
+    viewModel: ChatViewModel = hiltViewModel(
+        checkNotNull<ViewModelStoreOwner>(
+            LocalViewModelStoreOwner.current
+        ) {
+                "No ViewModelStoreOwner was provided via LocalViewModelStoreOwner"
+            }, null
+    )
 ) {
     val state by viewModel.state.collectAsState()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    val tts = remember {
+        TextToSpeech(context.applicationContext) { _ -> }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            tts.stop()
+            tts.shutdown()
+        }
+    }
+    val onSpeak: (String) -> Unit = { text ->
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -65,7 +144,8 @@ fun ChatScreen(
         }
     ) {
         Scaffold(
-            modifier = Modifier.imePadding().navigationBarsPadding(),
+            modifier = Modifier.imePadding(),
+            contentWindowInsets = WindowInsets.ime,
             topBar = {
                 TopAppBar(
                     title = {
@@ -122,7 +202,7 @@ fun ChatScreen(
                 }
 
                 when {
-                    !modelManagerIsLoaded(state) -> {
+                    !modelManagerIsLoaded() -> {
                         InfoGuard(
                             icon = Icons.Outlined.Memory,
                             title = "No Model Loaded",
@@ -132,7 +212,7 @@ fun ChatScreen(
                     }
                     state.activeSessionId == null -> {
                         InfoGuard(
-                            icon = Icons.Outlined.Chat,
+                            icon = Icons.AutoMirrored.Outlined.Chat,
                             title = "Start a Conversation",
                             subtitle = "Your local model is loaded and ready. Tap below to create a new chat session.",
                             actionLabel = "Create a Conversation",
@@ -143,11 +223,11 @@ fun ChatScreen(
                         MessagesList(
                             messages = state.messages,
                             streamingContent = state.streamingContent,
-                            isGenerating = state.isGenerating,
                             canLoadMore = !state.hasReachedMax,
                             onLoadMore = { viewModel.loadMoreMessages() },
                             showThinking = state.params.showThinking,
-                            showReasoning = state.params.showReasoning
+                            showReasoning = state.params.showReasoning,
+                            onSpeak = onSpeak
                         )
                         InputBar(
                             isGenerating = state.isGenerating,
@@ -162,7 +242,7 @@ fun ChatScreen(
 }
 
 @Composable
-private fun modelManagerIsLoaded(state: ChatUiState): Boolean = true
+private fun modelManagerIsLoaded(): Boolean = true
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -240,7 +320,7 @@ private fun SessionItem(
                 )
                 if (session.lastPreview != null) {
                     Text(
-                        text = session.lastPreview!!,
+                        text = session.lastPreview,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -271,14 +351,13 @@ private fun SessionItem(
 private fun ColumnScope.MessagesList(
     messages: List<ChatMessage>,
     streamingContent: String,
-    isGenerating: Boolean,
     canLoadMore: Boolean,
     onLoadMore: () -> Unit,
     showThinking: Boolean,
-    showReasoning: Boolean
+    showReasoning: Boolean,
+    onSpeak: ((String) -> Unit)? = null
 ) {
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
 
     // Auto-scroll to newest message. Using scrollToItem (instant) instead of animateScrollToItem
     // because the animation was restarting on every streaming token, flooding the main thread
@@ -313,7 +392,8 @@ private fun ColumnScope.MessagesList(
                     isUser = false,
                     isStreaming = true,
                     showThinking = showThinking,
-                    showReasoning = showReasoning
+                    showReasoning = showReasoning,
+                    onSpeak = onSpeak
                 )
             }
         }
@@ -325,7 +405,8 @@ private fun ColumnScope.MessagesList(
                 isStreaming = false,
                 tokensPerSecond = message.tokensPerSecond,
                 showThinking = showThinking,
-                showReasoning = showReasoning
+                showReasoning = showReasoning,
+                onSpeak = onSpeak
             )
         }
 
@@ -342,7 +423,6 @@ private fun ColumnScope.MessagesList(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     content: String,
@@ -350,10 +430,10 @@ private fun MessageBubble(
     isStreaming: Boolean = false,
     tokensPerSecond: Double? = null,
     showThinking: Boolean = true,
-    showReasoning: Boolean = true
+    showReasoning: Boolean = true,
+    onSpeak: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
-    var showMenu by remember { mutableStateOf(false) }
 
     val shape = if (isUser) {
         RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)
@@ -362,13 +442,16 @@ private fun MessageBubble(
     }
     val bgColor = if (isUser) UserBubbleIndigo else MaterialTheme.colorScheme.surfaceVariant
     val textColor = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface
-    val align = if (isUser) Alignment.End else Alignment.Start
+    val iconTint = textColor.copy(alpha = 0.7f)
+    val hasCodeBlocks = remember(content) {
+        LlmOutputParser().extractCodeBlocks(content).isNotEmpty()
+    }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
-        horizontalAlignment = align
+        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
     ) {
         Row(
             verticalAlignment = Alignment.Bottom,
@@ -376,118 +459,116 @@ private fun MessageBubble(
         ) {
             if (isUser) Spacer(modifier = Modifier.weight(1f))
 
-            Box {
-                Surface(
-                    modifier = Modifier.combinedClickable(
-                        onClick = {},
-                        onLongClick = {
-                            Timber.tag("ChatBubble").d("Long press detected, showMenu=%b", showMenu)
-                            showMenu = true
-                        }
-                    ),
-                    shape = shape,
-                    color = bgColor,
-                    tonalElevation = if (isUser) 0.dp else 1.dp,
-                    shadowElevation = 1.dp
+            Surface(
+                shape = shape,
+                color = bgColor,
+                tonalElevation = if (isUser) 0.dp else 1.dp,
+                shadowElevation = 1.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = 300.dp)
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .widthIn(max = 300.dp)
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
-                    ) {
-                        val parser = remember { LlmOutputParser() }
-                        val segments = remember(content, showThinking, showReasoning) {
-                            parser.parse(content, showThinking, showReasoning)
-                        }
+                    val parser = remember { LlmOutputParser() }
+                    val segments = remember(content, showThinking, showReasoning) {
+                        parser.parse(content, showThinking, showReasoning)
+                    }
 
-                        for (seg in segments) {
-                            when (seg.type) {
-                                SegmentType.TEXT -> MarkdownText(
-                                    text = seg.content + if (isStreaming && segments.size == 1) " ▊" else "",
-                                    color = textColor
-                                )
-                                SegmentType.CODE_BLOCK -> CodeBlockView(
-                                    code = seg.content,
-                                    language = seg.metadata["language"]
-                                )
-                                SegmentType.THINKING, SegmentType.REASONING -> MarkdownText(
-                                    text = seg.content,
-                                    color = textColor.copy(alpha = 0.6f),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(8.dp)
-                                        .background(
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                            shape = RoundedCornerShape(8.dp)
-                                        )
-                                        .padding(8.dp)
-                                )
-                                SegmentType.TOOL_CALL -> MarkdownText(
-                                    text = seg.content,
-                                    color = WarningAmber
-                                )
-                            }
-                        }
-
-                        if (isStreaming && segments.size > 1) {
-                            MarkdownText(
-                                text = " ▊",
+                    for (seg in segments) {
+                        when (seg.type) {
+                            SegmentType.TEXT -> MarkdownText(
+                                text = seg.content + if (isStreaming && segments.size == 1) " ▊" else "",
                                 color = textColor
                             )
-                        }
-
-                        if (tokensPerSecond != null) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "${"%.1f".format(tokensPerSecond)} tok/s",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = textColor.copy(alpha = 0.6f)
+                            SegmentType.CODE_BLOCK -> CodeBlockView(
+                                code = seg.content,
+                                language = seg.metadata["language"]
+                            )
+                            SegmentType.THINKING, SegmentType.REASONING -> MarkdownText(
+                                text = seg.content,
+                                color = textColor.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp)
+                                    .background(
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(8.dp)
+                            )
+                            SegmentType.TOOL_CALL -> MarkdownText(
+                                text = seg.content,
+                                color = WarningAmber
                             )
                         }
                     }
-                }
 
-                // Context menu on long-press
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false },
-                    offset = DpOffset(
-                        x = if (isUser) (-160).dp else 0.dp,
-                        y = 0.dp
-                    )
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Copy") },
-                        onClick = {
-                            showMenu = false
-                            copyText(context, content)
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                    if (isStreaming && segments.size > 1) {
+                        MarkdownText(
+                            text = " ▊",
+                            color = textColor
+                        )
+                    }
+
+                    if (tokensPerSecond != null) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "${"%.1f".format(tokensPerSecond)} tok/s",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = textColor.copy(alpha = 0.6f)
+                        )
+                    }
+
+                    if (!isStreaming) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        HorizontalDivider(color = textColor.copy(alpha = 0.15f))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            IconButton(
+                                onClick = { copyText(context, content) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.ContentCopy,
+                                    contentDescription = "Copy message",
+                                    tint = iconTint,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            if (hasCodeBlocks) {
+                                IconButton(
+                                    onClick = {
+                                        val code = LlmOutputParser().extractCodeBlocks(content)
+                                            .joinToString("\n\n") { it.second }
+                                        if (code.isNotEmpty()) copyText(context, code)
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Code,
+                                        contentDescription = "Copy code blocks",
+                                        tint = iconTint,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = { onSpeak?.invoke(content) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Outlined.VolumeUp,
+                                    contentDescription = "Read aloud",
+                                    tint = iconTint,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Copy Code Blocks") },
-                        onClick = {
-                            showMenu = false
-                            val codeSegments = LlmOutputParser().extractCodeBlocks(content)
-                                .joinToString("\n\n") { it.second }
-                            if (codeSegments.isNotEmpty()) copyText(context, codeSegments)
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Outlined.Code, contentDescription = null, modifier = Modifier.size(18.dp))
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Select All") },
-                        onClick = {
-                            showMenu = false
-                            copyText(context, content)
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Outlined.SelectAll, contentDescription = null, modifier = Modifier.size(18.dp))
-                        }
-                    )
+                    }
                 }
             }
 
@@ -574,7 +655,7 @@ private fun InputBar(
                     shape = RoundedCornerShape(50)
                 ) {
                     Icon(
-                        Icons.Default.Send,
+                        Icons.AutoMirrored.Filled.Send,
                         contentDescription = "Send",
                         tint = if (text.isNotBlank()) DarkObsidian else MaterialTheme.colorScheme.onSurfaceVariant
                     )

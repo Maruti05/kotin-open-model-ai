@@ -4,12 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vedica.labs.ind.app.chat.openmodels.data.model.InferenceParams
 import com.vedica.labs.ind.app.chat.openmodels.data.model.PromptPreset
-import com.vedica.labs.ind.app.chat.openmodels.data.repository.SettingsRepository
 import com.vedica.labs.ind.app.chat.openmodels.data.repository.ModelRepository
+import com.vedica.labs.ind.app.chat.openmodels.data.repository.SettingsRepository
 import com.vedica.labs.ind.app.chat.openmodels.domain.util.PromptTemplateService
-
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 

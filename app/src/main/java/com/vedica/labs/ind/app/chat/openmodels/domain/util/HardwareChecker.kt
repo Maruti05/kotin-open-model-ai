@@ -4,7 +4,11 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Environment
+import android.os.StatFs
 import com.vedica.labs.ind.app.chat.openmodels.data.model.DiagnosticsInfo
+import java.math.BigDecimal
+import java.math.RoundingMode
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,31 +20,54 @@ class HardwareChecker @Inject constructor() {
         val memoryInfo = ActivityManager.MemoryInfo()
         activityManager.getMemoryInfo(memoryInfo)
 
-        val totalRamGb = memoryInfo.totalMem.toDouble() / (1024 * 1024 * 1024)
-        val availableRamGb = memoryInfo.availMem.toDouble() / (1024 * 1024 * 1024)
+        val totalRamGb = BigDecimal(memoryInfo.totalMem.toDouble() / (1024 * 1024 * 1024))
+            .setScale(2, RoundingMode.HALF_UP).toDouble()
+        val availableRamGb = BigDecimal(memoryInfo.availMem.toDouble() / (1024 * 1024 * 1024))
+            .setScale(2, RoundingMode.HALF_UP).toDouble()
         val cores = Runtime.getRuntime().availableProcessors()
 
-        val hasVulkan = if (Build.VERSION.SDK_INT >= 24) {
+        val hasVulkan = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            context.packageManager.hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_LEVEL)
+        } else {
             context.packageManager.hasSystemFeature("android.hardware.vulkan")
-        } else false
+        }
 
-        val hasNnapi = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1
+        val hasNnapi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.packageManager.hasSystemFeature("android.hardware.nnapi")
+        } else {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1
+        }
+
+        val (totalStorage, availableStorage) = getStorageInfo()
+
+        val androidVersion = Build.VERSION.RELEASE ?: ""
+        val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
 
         return DiagnosticsInfo(
-            totalRamGb = (totalRamGb * 100).toInt() / 100.0,
-            availableRamGb = (availableRamGb * 100).toInt() / 100.0,
+            totalRamGb = totalRamGb,
+            availableRamGb = availableRamGb,
             cores = cores,
             hasVulkan = hasVulkan,
-            hasNnapi = hasNnapi
+            hasNnapi = hasNnapi,
+            totalStorageGb = totalStorage,
+            availableStorageGb = availableStorage,
+            androidVersion = androidVersion,
+            deviceName = deviceName
         )
     }
 
-    fun getThreadRecommendation(modelId: String, cores: Int): Int {
-        val lower = modelId.lowercase()
-        return when {
-            lower.contains("7b") || lower.contains("mistral") -> (cores - 2).coerceAtLeast(2)
-            lower.contains("3b") || lower.contains("llama_3_3") -> (cores - 1).coerceAtLeast(2)
-            else -> cores.coerceAtMost(4)
+    private fun getStorageInfo(): Pair<Double, Double> {
+        return try {
+            val path = Environment.getDataDirectory()
+            val stat = StatFs(path.path)
+            val total = stat.totalBytes.toDouble() / (1024 * 1024 * 1024)
+            val available = stat.availableBytes.toDouble() / (1024 * 1024 * 1024)
+            val totalRounded = BigDecimal(total).setScale(2, RoundingMode.HALF_UP).toDouble()
+            val availableRounded = BigDecimal(available).setScale(2, RoundingMode.HALF_UP).toDouble()
+            Pair(totalRounded, availableRounded)
+        } catch (_: Exception) {
+            Pair(0.0, 0.0)
         }
     }
+
 }

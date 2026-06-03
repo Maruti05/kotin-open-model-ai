@@ -4,8 +4,8 @@ import com.vedica.labs.ind.app.chat.openmodels.data.local.dao.FileContextDao
 import com.vedica.labs.ind.app.chat.openmodels.data.local.entity.FileContextEntity
 import com.vedica.labs.ind.app.chat.openmodels.data.local.preferences.AppPreferences
 import com.vedica.labs.ind.app.chat.openmodels.data.model.ModelDownloadState
-import com.vedica.labs.ind.app.chat.openmodels.data.model.ModelInfo
 import com.vedica.labs.ind.app.chat.openmodels.domain.download.ModelDownloader
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +16,7 @@ import javax.inject.Singleton
 
 @Singleton
 class ModelRepository @Inject constructor(
+    @ApplicationContext private val context: android.content.Context,
     private val preferences: AppPreferences,
     private val fileContextDao: FileContextDao,
     private val modelDownloader: ModelDownloader
@@ -33,14 +34,27 @@ class ModelRepository @Inject constructor(
         preferences.removeDownloadedModelId(modelId)
     }
 
+    private val _cancelledDownloads = mutableSetOf<String>()
+
     suspend fun startDownload(modelId: String, url: String, totalBytes: Long) {
         val outputFile = java.io.File(getModelPath(modelId))
         _downloads.value = _downloads.value + (modelId to ModelDownloadState(
             modelId = modelId, totalBytes = totalBytes
         ))
         try {
-            modelDownloader.download(url = url, outputFile = outputFile, totalBytes = totalBytes) { progress ->
-                _downloads.value = _downloads.value + (modelId to progress.copy(modelId = modelId))
+            modelDownloader.download(
+                modelId = modelId,
+                url = url,
+                outputFile = outputFile,
+                totalBytes = totalBytes
+            ) { progress ->
+                if (modelId !in _cancelledDownloads) {
+                    _downloads.value = _downloads.value + (modelId to progress.copy(modelId = modelId))
+                }
+            }
+            if (modelId in _cancelledDownloads) {
+                _cancelledDownloads.remove(modelId)
+                return
             }
             _downloads.value = _downloads.value + (modelId to ModelDownloadState(
                 modelId = modelId,
@@ -51,12 +65,25 @@ class ModelRepository @Inject constructor(
             ))
             addToDownloaded(modelId)
         } catch (e: Exception) {
+            if (modelId in _cancelledDownloads) {
+                _cancelledDownloads.remove(modelId)
+                removeDownload(modelId)
+                return
+            }
             _downloads.value = _downloads.value + (modelId to ModelDownloadState(
                 modelId = modelId,
                 status = "ERROR",
                 error = e.message ?: "Download failed"
             ))
         }
+    }
+
+    fun cancelDownload(modelId: String) {
+        _cancelledDownloads.add(modelId)
+        modelDownloader.cancelDownload(modelId)
+        val file = java.io.File(getModelPath(modelId))
+        if (file.exists()) file.delete()
+        removeDownload(modelId)
     }
 
     fun updateDownloadState(modelId: String, state: ModelDownloadState) {
@@ -68,10 +95,7 @@ class ModelRepository @Inject constructor(
     }
 
     fun getModelPath(modelId: String): String {
-        val dir = java.io.File(
-            android.os.Environment.getExternalStorageDirectory(),
-            "Android/data/com.vedica.labs.ind.app.chat.openmodels/files/OpenModels"
-        )
+        val dir = context.getExternalFilesDir("OpenModels")!!
         return java.io.File(dir, "$modelId.gguf").absolutePath
     }
 

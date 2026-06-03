@@ -8,7 +8,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import com.vedica.labs.ind.app.chat.openmodels.ui.navigation.ShellLayout
 import com.vedica.labs.ind.app.chat.openmodels.ui.theme.OpenModelsTheme
 import com.vedica.labs.ind.app.chat.openmodels.ui.theme.ThemeViewModel
@@ -21,7 +22,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val themeViewModel: ThemeViewModel = hiltViewModel()
+            val themeViewModel: ThemeViewModel =
+                hiltViewModel(checkNotNull(LocalViewModelStoreOwner.current) {
+                    "No ViewModelStoreOwner was provided via LocalViewModelStoreOwner"
+                }, null)
             val themeMode by themeViewModel.themeMode.collectAsState()
 
             val isDarkTheme = when (themeMode) {

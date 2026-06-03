@@ -1,7 +1,5 @@
 package com.vedica.labs.ind.app.chat.openmodels.domain.inference
 
-import android.app.ActivityManager
-import android.content.Context
 import android.os.Debug
 import com.llamatik.library.platform.GenStream
 import com.llamatik.library.platform.LlamaBridge

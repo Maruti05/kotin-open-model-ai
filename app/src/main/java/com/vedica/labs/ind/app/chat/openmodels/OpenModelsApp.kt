@@ -1,7 +1,6 @@
 package com.vedica.labs.ind.app.chat.openmodels
 
 import android.app.Application
-import android.os.Environment
 import android.util.Log
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber

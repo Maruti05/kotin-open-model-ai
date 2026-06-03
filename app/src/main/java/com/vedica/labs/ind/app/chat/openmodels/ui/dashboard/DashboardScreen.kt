@@ -1,19 +1,49 @@
 package com.vedica.labs.ind.app.chat.openmodels.ui.dashboard
 
-import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -22,18 +52,31 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import com.vedica.labs.ind.app.chat.openmodels.data.model.BenchmarkResult
 import com.vedica.labs.ind.app.chat.openmodels.data.model.DiagnosticsInfo
 import com.vedica.labs.ind.app.chat.openmodels.ui.components.EmptyState
 import com.vedica.labs.ind.app.chat.openmodels.ui.components.StatusBadge
 import com.vedica.labs.ind.app.chat.openmodels.ui.components.StyledCard
-import com.vedica.labs.ind.app.chat.openmodels.ui.theme.*
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.ErrorRed
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.InfoBlue
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.NeonCyan
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.SuccessGreen
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.VibrantIndigo
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.WarningAmber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
-    viewModel: DashboardViewModel = hiltViewModel()
+    viewModel: DashboardViewModel = hiltViewModel(
+        checkNotNull<ViewModelStoreOwner>(
+            LocalViewModelStoreOwner.current
+        ) {
+                "No ViewModelStoreOwner was provided via LocalViewModelStoreOwner"
+            }, null
+    )
 ) {
     val diagnostics by viewModel.diagnostics.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -147,11 +190,32 @@ private fun DashboardContent(
                 AnimatedStatCard(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Outlined.Storage,
-                    label = "Free RAM",
-                    value = "${"%.1f".format(diagnostics.availableRamGb)} GB",
-                    subtitle = "Available",
+                    label = "Storage",
+                    value = "${"%.1f".format(diagnostics.usedStorageGb)} GB",
+                    subtitle = "of ${"%.1f".format(diagnostics.totalStorageGb)} GB",
                     gradient = Brush.linearGradient(listOf(SuccessGreen.copy(alpha = 0.1f), Color.Transparent))
                 )
+            }
+        }
+
+        // Device Info
+        item(key = "device") {
+            StyledCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    DeviceInfoBadge(
+                        icon = Icons.Outlined.Info,
+                        label = "Android",
+                        value = diagnostics.androidVersion
+                    )
+                    DeviceInfoBadge(
+                        icon = Icons.Outlined.Smartphone,
+                        label = "Device",
+                        value = diagnostics.deviceName
+                    )
+                }
             }
         }
 
@@ -174,7 +238,7 @@ private fun DashboardContent(
             }
         }
 
-        // Tier Info with animated progress
+        // Resource utilization with animated progress
         item(key = "tier") {
             StyledCard {
                 Column {
@@ -184,26 +248,91 @@ private fun DashboardContent(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    val animatedProgress by animateFloatAsState(
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val ramProgress by animateFloatAsState(
                         targetValue = diagnostics.usedRamPercent,
                         animationSpec = tween(1000)
                     )
-                    val tierColor = when (diagnostics.deviceTier) {
-                        1 -> SuccessGreen; 2 -> WarningAmber; else -> ErrorRed
+                    val ramColor = when {
+                        diagnostics.usedRamPercent < 0.6f -> SuccessGreen
+                        diagnostics.usedRamPercent < 0.85f -> WarningAmber
+                        else -> ErrorRed
                     }
-                    LinearProgressIndicator(
-                        progress = { animatedProgress },
-                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                        color = tierColor,
-                        trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "${"%.0f".format(diagnostics.usedRamPercent * 100)}% RAM utilized",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = "RAM",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { ramProgress },
+                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                        color = ramColor,
+                        trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "${"%.1f".format(diagnostics.usedRamGb)} GB / ${"%.1f".format(diagnostics.totalRamGb)} GB",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${"%.0f".format(diagnostics.usedRamPercent * 100)}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
+                            color = ramColor
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val storageProgress by animateFloatAsState(
+                        targetValue = diagnostics.usedStoragePercent,
+                        animationSpec = tween(1000)
+                    )
+                    val storageColor = when {
+                        diagnostics.usedStoragePercent < 0.6f -> SuccessGreen
+                        diagnostics.usedStoragePercent < 0.85f -> WarningAmber
+                        else -> ErrorRed
+                    }
+                    Text(
+                        text = "Storage",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { storageProgress },
+                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                        color = storageColor,
+                        trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "${"%.1f".format(diagnostics.usedStorageGb)} GB / ${"%.1f".format(diagnostics.totalStorageGb)} GB",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${"%.0f".format(diagnostics.usedStoragePercent * 100)}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
+                            color = storageColor
+                        )
+                    }
                 }
             }
         }
@@ -370,6 +499,34 @@ private fun AccelerationBadge(label: String, supported: Boolean) {
 }
 
 @Composable
+private fun DeviceInfoBadge(
+    icon: ImageVector,
+    label: String,
+    value: String
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = NeonCyan,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
 private fun BenchmarkCard(
     latestBenchmark: BenchmarkResult?,
     isBenchmarking: Boolean,
@@ -407,9 +564,10 @@ private fun BenchmarkCard(
 
 @Composable
 private fun BenchmarkResultRow(result: BenchmarkResult) {
-    Row(
+    FlowRow(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         BenchmarkMetric("Tokens/sec", "${"%.1f".format(result.tokensPerSecond)}")
         BenchmarkMetric("Prompt Eval", "${result.promptEvalLatencyMs}ms")

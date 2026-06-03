@@ -9,9 +9,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.vedica.labs.ind.app.chat.openmodels.ui.theme.*
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.ActiveGreen
+import com.vedica.labs.ind.app.chat.openmodels.ui.theme.ErrorRed
 
 @Composable
 fun StatusBadge(

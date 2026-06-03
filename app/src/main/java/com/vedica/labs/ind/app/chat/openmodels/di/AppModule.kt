@@ -2,13 +2,14 @@ package com.vedica.labs.ind.app.chat.openmodels.di
 
 import android.content.Context
 import com.vedica.labs.ind.app.chat.openmodels.data.local.AppDatabase
-import com.vedica.labs.ind.app.chat.openmodels.data.local.dao.*
+import com.vedica.labs.ind.app.chat.openmodels.data.local.dao.BenchmarkDao
+import com.vedica.labs.ind.app.chat.openmodels.data.local.dao.ChatMessageDao
+import com.vedica.labs.ind.app.chat.openmodels.data.local.dao.ChatSessionDao
+import com.vedica.labs.ind.app.chat.openmodels.data.local.dao.FileContextDao
 import com.vedica.labs.ind.app.chat.openmodels.data.local.preferences.AppPreferences
-import com.vedica.labs.ind.app.chat.openmodels.data.repository.*
 import com.vedica.labs.ind.app.chat.openmodels.domain.benchmark.BenchmarkRunner
 import com.vedica.labs.ind.app.chat.openmodels.domain.download.ModelDownloader
 import com.vedica.labs.ind.app.chat.openmodels.domain.inference.GGUFInferenceEngine
-import com.vedica.labs.ind.app.chat.openmodels.domain.inference.HybridModelManager
 import com.vedica.labs.ind.app.chat.openmodels.domain.inference.SimulatedInferenceEngine
 import com.vedica.labs.ind.app.chat.openmodels.domain.parser.LlmOutputParser
 import com.vedica.labs.ind.app.chat.openmodels.domain.util.HardwareChecker
