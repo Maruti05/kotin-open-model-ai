@@ -10,6 +10,7 @@ import com.vedica.labs.ind.app.chat.openmodels.data.local.preferences.AppPrefere
 import com.vedica.labs.ind.app.chat.openmodels.domain.benchmark.BenchmarkRunner
 import com.vedica.labs.ind.app.chat.openmodels.domain.download.ModelDownloader
 import com.vedica.labs.ind.app.chat.openmodels.domain.inference.GGUFInferenceEngine
+import com.vedica.labs.ind.app.chat.openmodels.domain.inference.LiteRTInferenceEngine
 import com.vedica.labs.ind.app.chat.openmodels.domain.inference.SimulatedInferenceEngine
 import com.vedica.labs.ind.app.chat.openmodels.domain.parser.LlmOutputParser
 import com.vedica.labs.ind.app.chat.openmodels.domain.util.HardwareChecker
@@ -76,4 +77,9 @@ object AppModule {
     @Singleton
     fun provideGGUFInferenceEngine(): GGUFInferenceEngine =
         GGUFInferenceEngine()
+
+    @Provides
+    @Singleton
+    fun provideLiteRTInferenceEngine(): LiteRTInferenceEngine =
+        LiteRTInferenceEngine()
 }

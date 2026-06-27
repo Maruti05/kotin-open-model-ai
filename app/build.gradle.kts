@@ -15,8 +15,8 @@ android {
         minSdk = 26
         //noinspection OldTargetApi
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.1.1"
+        versionCode = 7
+        versionName = "1.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -148,4 +148,8 @@ dependencies {
 
     // Llamatik - native Kotlin AI library (llama.cpp bindings)
     implementation("com.llamatik:library:1.6.0")
+
+    // LiteRT (Google AI Edge) - on-device ML inference for TFLite models
+    // Bundles org.tensorflow.lite.* classes internally (including Interpreter, GpuDelegate, XNNPACK)
+    implementation("com.google.ai.edge.litert:litert:2.1.0")
 }

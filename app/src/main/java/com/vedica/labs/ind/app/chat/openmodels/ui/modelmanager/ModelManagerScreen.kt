@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,15 +26,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.Cancel
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -54,21 +52,21 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import com.vedica.labs.ind.app.chat.openmodels.data.model.BackendType
 import com.vedica.labs.ind.app.chat.openmodels.data.model.ModelDownloadState
-import com.vedica.labs.ind.app.chat.openmodels.ui.components.EmptyState
+import com.vedica.labs.ind.app.chat.openmodels.data.model.ModelInfo
+import com.vedica.labs.ind.app.chat.openmodels.ui.components.CollapsibleSection
 import com.vedica.labs.ind.app.chat.openmodels.ui.components.StyledCard
 import com.vedica.labs.ind.app.chat.openmodels.ui.theme.ErrorRed
 import com.vedica.labs.ind.app.chat.openmodels.ui.theme.NeonCyan
@@ -89,6 +87,9 @@ fun ModelManagerScreen(
     val searchQuery by viewModel.searchQuery.collectAsState()
     val selectedTier by viewModel.selectedTier.collectAsState()
     val downloadFilter by viewModel.downloadFilter.collectAsState()
+    val selectedLicense by viewModel.selectedLicense.collectAsState()
+    val selectedUseCase by viewModel.selectedUseCase.collectAsState()
+    val selectedBackend by viewModel.selectedBackend.collectAsState()
     val filteredModels by viewModel.filteredModels.collectAsState()
     val downloadedIds by viewModel.downloadedModelIds.collectAsState()
     val downloads by viewModel.downloads.collectAsState()
@@ -111,7 +112,6 @@ fun ModelManagerScreen(
             )
         )
 
-        // Device capability banner
         AnimatedVisibility(
             visible = caps.totalRamGb > 0,
             enter = expandVertically(animationSpec = tween(300)),
@@ -120,145 +120,212 @@ fun ModelManagerScreen(
             DeviceBanner(caps = caps)
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // Search bar
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { viewModel.setSearchQuery(it) },
+        LazyColumn(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            placeholder = { Text("Search models...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            trailingIcon = if (searchQuery.isNotEmpty()) {
-                {
-                    IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear")
-                    }
-                }
-            } else null,
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = NeonCyan,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline
-            )
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Tier filters + Download filter dropdown — adaptive FlowRow
-        FlowRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf(null to "All", 1 to "T1", 2 to "T2", 3 to "T3").forEach { (tier, label) ->
-                FilterChip(
-                    selected = selectedTier == tier,
-                    onClick = { viewModel.setSelectedTier(tier) },
-                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = NeonCyan.copy(alpha = 0.2f)
-                    ),
-                    shape = RoundedCornerShape(8.dp)
+            item {
+                Spacer(modifier = Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { viewModel.setSearchQuery(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Search models...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = if (searchQuery.isNotEmpty()) {
+                        {
+                            IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                            }
+                        }
+                    } else null,
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NeonCyan,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    )
                 )
             }
 
-            // Download filter dropdown
-            var expanded by remember { mutableStateOf(false) }
-            Box {
-                FilterChip(
-                    selected = false,
-                    onClick = { expanded = true },
-                    label = {
-                        Text(
-                            text = when (downloadFilter) {
-                                DownloadFilter.ALL -> "All"
-                                DownloadFilter.DOWNLOADED -> "Downloaded"
-                                DownloadFilter.NOT_DOWNLOADED -> "Not Downloaded"
-                            },
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    },
-                    trailingIcon = {
-                        Icon(
-                            Icons.Outlined.ArrowDropDown,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    },
-                    shape = RoundedCornerShape(8.dp)
-                )
-                DropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false }
-                ) {
-                    DownloadFilter.entries.forEach { filter ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = when (filter) {
-                                        DownloadFilter.ALL -> "All Models"
-                                        DownloadFilter.DOWNLOADED -> "Downloaded"
-                                        DownloadFilter.NOT_DOWNLOADED -> "Not Downloaded"
-                                    },
-                                    fontWeight = if (filter == downloadFilter) FontWeight.Bold else FontWeight.Normal
+            item {
+                StyledCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Outlined.Tune,
+                                contentDescription = null,
+                                tint = NeonCyan,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Filters",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        FilterSection("Tier") {
+                            listOf(null to "All", 1 to "T1", 2 to "T2", 3 to "T3").forEach { (tier, label) ->
+                                FilterChip(
+                                    selected = selectedTier == tier,
+                                    onClick = { viewModel.setSelectedTier(tier) },
+                                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = NeonCyan.copy(alpha = 0.2f)
+                                    ),
+                                    shape = RoundedCornerShape(8.dp)
                                 )
-                            },
-                            onClick = {
-                                viewModel.setDownloadFilter(filter)
-                                expanded = false
-                            },
-                            leadingIcon = if (filter == downloadFilter) {
-                                { Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                            } else null
-                        )
+                            }
+                        }
+
+                        FilterSection("Status") {
+                            DownloadFilter.entries.forEach { filter ->
+                                val label = when (filter) {
+                                    DownloadFilter.ALL -> "All"
+                                    DownloadFilter.DOWNLOADED -> "Downloaded"
+                                    DownloadFilter.NOT_DOWNLOADED -> "Not Downloaded"
+                                }
+                                FilterChip(
+                                    selected = downloadFilter == filter,
+                                    onClick = { viewModel.setDownloadFilter(filter) },
+                                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = NeonCyan.copy(alpha = 0.2f)
+                                    ),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                        }
+
+                        CollapsibleSection(
+                            icon = Icons.Outlined.Tune,
+                            title = "More Filters",
+                            subtitle = "License, Use Case, Backend"
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                FilterSection("License") {
+                                    LicenseFilter.entries.forEach { license ->
+                                        val label = when (license) {
+                                            LicenseFilter.ALL -> "Any License"
+                                            LicenseFilter.APACHE_2_0 -> "Apache 2.0"
+                                            LicenseFilter.MIT -> "MIT"
+                                        }
+                                        FilterChip(
+                                            selected = selectedLicense == license,
+                                            onClick = { viewModel.setSelectedLicense(license) },
+                                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = NeonCyan.copy(alpha = 0.2f)
+                                            ),
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                    }
+                                }
+
+                                FilterSection("Use Case") {
+                                    UseCaseFilter.entries.forEach { useCase ->
+                                        val label = when (useCase) {
+                                            UseCaseFilter.ALL -> "Any Use"
+                                            UseCaseFilter.CHAT -> "Chat"
+                                            UseCaseFilter.CODE -> "Code"
+                                            UseCaseFilter.REASONING -> "Reasoning"
+                                            UseCaseFilter.VISION -> "Vision"
+                                            UseCaseFilter.GENERAL -> "General"
+                                        }
+                                        FilterChip(
+                                            selected = selectedUseCase == useCase,
+                                            onClick = { viewModel.setSelectedUseCase(useCase) },
+                                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = NeonCyan.copy(alpha = 0.2f)
+                                            ),
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                    }
+                                }
+
+                                FilterSection("Backend") {
+                                    listOf(null to "All", BackendType.LITERT to "LiteRT", BackendType.LLAMA_CPP to "GGUF").forEach { (backend, label) ->
+                                        FilterChip(
+                                            selected = selectedBackend == backend,
+                                            onClick = { viewModel.setSelectedBackend(backend) },
+                                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = NeonCyan.copy(alpha = 0.2f)
+                                            ),
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // Model count
-        Text(
-            text = "${filteredModels.size} models \u00B7 ${downloadedIds.size} downloaded \u00B7 ${"%.1f".format(caps.availableRamGb)} GB free RAM",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-        )
-
-        if (error != null) {
-            Snackbar(modifier = Modifier.padding(16.dp)) {
-                Text(error!!)
+            item {
+                Text(
+                    text = "${filteredModels.size} models \u00B7 ${downloadedIds.size} downloaded \u00B7 ${"%.1f".format(caps.availableRamGb)} GB free RAM",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-        }
 
-        if (filteredModels.isEmpty()) {
-            EmptyState(
-                icon = Icons.Outlined.CloudDownload,
-                title = "No models found",
-                subtitle = if (searchQuery.isNotEmpty()) "Try a different search" else "No models match the selected filters"
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(filteredModels, key = { it["id"] as String }) { model ->
-                    val modelId = model["id"] as String
-                    val isDownloaded = downloadedIds.contains(modelId)
-                    val downloadState = downloads[modelId]
-                    val isLoading = loadingModelId == modelId
-                    val isLoaded = loadedModelId == modelId
-                    val canRun = viewModel.canRunModel(modelId)
-                    val canDl = viewModel.canDownloadModel(modelId)
-                    val incompatReason = viewModel.getIncompatibilityReason(modelId)
+            if (error != null) {
+                item {
+                    Snackbar {
+                        Text(error!!)
+                    }
+                }
+            }
+
+            if (filteredModels.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Outlined.CloudDownload,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                "No models found",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = if (searchQuery.isNotEmpty()) "Try a different search" else "No models match the selected filters",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(filteredModels, key = { it.id }) { model ->
+                    val isDownloaded = downloadedIds.contains(model.id)
+                    val downloadState = downloads[model.id]
+                    val isLoading = loadingModelId == model.id
+                    val isLoaded = loadedModelId == model.id
+                    val canRun = viewModel.canRunModel(model.id)
+                    val canDl = viewModel.canDownloadModel(model.id)
+                    val incompatReason = viewModel.getIncompatibilityReason(model.id)
 
                     ModelCard(
                         model = model,
@@ -269,13 +336,13 @@ fun ModelManagerScreen(
                         canRun = canRun,
                         canDownload = canDl,
                         incompatibilityReason = incompatReason,
-                        onDownload = { viewModel.triggerDownload(modelId) },
-                        onLoad = { viewModel.loadModelToRam(modelId) },
+                        onDownload = { viewModel.triggerDownload(model.id) },
+                        onLoad = { viewModel.loadModelToRam(model.id) },
                         onUnload = { viewModel.unloadModel() },
-                        onDelete = { viewModel.deleteModel(modelId) },
-                        onRetry = { viewModel.retryDownload(modelId) },
-                        onDismissError = { viewModel.clearDownloadError(modelId) },
-                        onCancel = { viewModel.cancelDownload(modelId) }
+                        onDelete = { viewModel.deleteModel(model.id) },
+                        onRetry = { viewModel.retryDownload(model.id) },
+                        onDismissError = { viewModel.clearDownloadError(model.id) },
+                        onCancel = { viewModel.cancelDownload(model.id) }
                     )
                 }
             }
@@ -322,9 +389,28 @@ private fun DeviceStat(label: String, value: String, color: Color) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FilterSection(title: String, content: @Composable FlowRowScope.() -> Unit) {
+    Column {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            content = content
+        )
+    }
+}
+
 @Composable
 private fun ModelCard(
-    model: Map<String, Any>,
+    model: ModelInfo,
     isDownloaded: Boolean,
     downloadState: ModelDownloadState?,
     isLoading: Boolean,
@@ -340,14 +426,7 @@ private fun ModelCard(
     onDismissError: () -> Unit,
     onCancel: () -> Unit
 ) {
-    val modelId = model["id"] as String
-    val name = model["name"] as String
-    val params = model["params"] as String
-    val sizeMb = (model["sizeMb"] as Number).toDouble()
-    val tier = (model["tier"] as Number).toInt()
-    val minRam = (model["minRamGb"] as Number).toDouble()
-    val description = model["description"] as String
-    val contextWindow = (model["contextWindow"] as Number).toInt()
+    val isLiteRT = model.backendType == BackendType.LITERT
 
     StyledCard(
         gradient = if (isLoaded) Brush.horizontalGradient(
@@ -362,7 +441,7 @@ private fun ModelCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = name,
+                        text = model.name,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -372,10 +451,16 @@ private fun ModelCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        InfoChip("${"%.1f".format(sizeMb / 1024.0)} GB")
-                        InfoChip(params)
-                        InfoChip("T$tier")
-                        InfoChip("${contextWindow} ctx")
+                        InfoChip("${"%.1f".format(model.sizeMb / 1024.0)} GB")
+                        InfoChip(model.params)
+                        InfoChip("T${model.tier}")
+                        InfoChip("${model.contextWindow} ctx")
+                        BackendChip(isLiteRT = isLiteRT)
+                        if (model.license == "apache-2.0" || model.license == "mit") {
+                            InfoChip(
+                                text = if (model.license == "apache-2.0") "Apache 2.0" else "MIT",
+                            )
+                        }
                     }
                 }
                 if (isLoaded) {
@@ -397,18 +482,17 @@ private fun ModelCard(
 
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = description,
+                text = model.description,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                MetaText("Min RAM", "${"%.1f".format(minRam)} GB")
-                MetaText("Model size", "${"%.1f".format(sizeMb / 1024.0)} GB")
+                MetaText("Min RAM", "${"%.1f".format(model.minRamGb)} GB")
+                MetaText("Model size", "${"%.1f".format(model.sizeMb / 1024.0)} GB")
             }
 
-            // Incompatibility warning
             if (incompatibilityReason != null && !isDownloaded) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Surface(
@@ -437,7 +521,6 @@ private fun ModelCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Download progress with inline cancel
             AnimatedVisibility(visible = downloadState != null && downloadState.isDownloading) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -465,7 +548,6 @@ private fun ModelCard(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // Error state
             AnimatedVisibility(visible = downloadState != null && downloadState.isError) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -485,7 +567,6 @@ private fun ModelCard(
                 }
             }
 
-            // Actions
             if (downloadState == null || !downloadState.isDownloading) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -575,6 +656,27 @@ private fun MetaText(label: String, value: String) {
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Medium,
             color = NeonCyan
+        )
+    }
+}
+
+@Composable
+private fun BackendChip(isLiteRT: Boolean) {
+    val (label, containerColor, contentColor) = if (isLiteRT) {
+        Triple("LiteRT", NeonCyan.copy(alpha = 0.15f), NeonCyan)
+    } else {
+        Triple("llama.cpp", MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = containerColor,
+        tonalElevation = if (isLiteRT) 0.dp else 2.dp
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            color = contentColor
         )
     }
 }

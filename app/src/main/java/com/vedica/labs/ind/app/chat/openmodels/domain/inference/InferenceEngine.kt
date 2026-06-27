@@ -1,11 +1,13 @@
 package com.vedica.labs.ind.app.chat.openmodels.domain.inference
 
+import com.vedica.labs.ind.app.chat.openmodels.data.model.BackendType
 import com.vedica.labs.ind.app.chat.openmodels.data.model.InferenceParams
 import kotlinx.coroutines.flow.Flow
 
 interface InferenceEngine {
     val isLoaded: Boolean
     val loaderName: String
+    val backendType: BackendType
     val currentModelId: String?
     val currentTemplate: String?
 

@@ -50,7 +50,11 @@ class ChatViewModel @Inject constructor(
 
     init {
         Timber.tag("ChatVM").d("ChatViewModel initialized")
-        _state.update { it.copy(activeModelName = modelManager.activeModelId) }
+        viewModelScope.launch {
+            modelManager.activeModelId.collect { modelId ->
+                _state.update { it.copy(activeModelName = modelId) }
+            }
+        }
         loadSessions()
         viewModelScope.launch {
             settingsRepository.getInferenceParams().collect { params ->
@@ -73,7 +77,7 @@ class ChatViewModel @Inject constructor(
     fun createNewSession(modelName: String? = null) {
         viewModelScope.launch {
             try {
-                val name = modelName ?: modelManager.activeModelId ?: "local-model"
+                val name = modelName ?: modelManager.activeModelIdValue ?: "local-model"
                 val session = chatRepository.createSession(name)
                 _state.update { it.copy(activeSessionId = session.id, messages = emptyList(), streamingContent = "", hasReachedMax = false) }
             } catch (e: Exception) {
@@ -137,7 +141,7 @@ class ChatViewModel @Inject constructor(
             try {
                 var activeSessionId = sessionId
                 if (activeSessionId == null) {
-                    val modelName = modelManager.activeModelId ?: "local-model"
+                    val modelName = modelManager.activeModelIdValue ?: "local-model"
                     val session = chatRepository.createSession(modelName)
                     activeSessionId = session.id
                     Timber.tag("ChatVM").d("Created new session: %s", activeSessionId)

@@ -1,6 +1,5 @@
 package com.vedica.labs.ind.app.chat.openmodels.ui.navigation
 
-import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
@@ -8,8 +7,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material.icons.Icons
@@ -23,7 +20,6 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -53,11 +49,7 @@ enum class Screen(val label: String, val icon: ImageVector, val accentColor: and
 fun ShellLayout() {
     var selectedScreen by remember { mutableStateOf(Screen.CHAT) }
 
-    val contentInsets = if (Build.VERSION.SDK_INT >= 35) {
-        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
-    } else {
-        ScaffoldDefaults.contentWindowInsets
-    }
+    val contentInsets = WindowInsets.systemBars
 
     Scaffold(
         contentWindowInsets = contentInsets,
@@ -121,7 +113,9 @@ fun ShellLayout() {
                 when (screen) {
                     Screen.TELEMETRY -> DashboardScreen()
                     Screen.REPOSITORY -> ModelManagerScreen()
-                    Screen.CHAT -> ChatScreen()
+                    Screen.CHAT -> ChatScreen(
+                        onNavigateToRepository = { selectedScreen = Screen.REPOSITORY }
+                    )
                     Screen.SETTINGS -> SettingsScreen()
                 }
             }

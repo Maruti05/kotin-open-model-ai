@@ -3,6 +3,7 @@ package com.vedica.labs.ind.app.chat.openmodels.domain.inference
 import android.os.Debug
 import com.llamatik.library.platform.GenStream
 import com.llamatik.library.platform.LlamaBridge
+import com.vedica.labs.ind.app.chat.openmodels.data.model.BackendType
 import com.vedica.labs.ind.app.chat.openmodels.data.model.InferenceParams
 import com.vedica.labs.ind.app.chat.openmodels.data.model.ModelCatalog
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +35,7 @@ class GGUFInferenceEngine @Inject constructor() : InferenceEngine {
 
     override val isLoaded: Boolean get() = _isLoaded
     override val loaderName: String get() = "Llamatik (llama.cpp)"
+    override val backendType: BackendType get() = BackendType.LLAMA_CPP
     override val currentModelId: String? get() = _currentModelId
     override val currentTemplate: String? get() = _currentTemplate
 

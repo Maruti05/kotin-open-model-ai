@@ -2,6 +2,8 @@ package com.vedica.labs.ind.app.chat.openmodels.data.repository
 
 import com.vedica.labs.ind.app.chat.openmodels.data.local.dao.FileContextDao
 import com.vedica.labs.ind.app.chat.openmodels.data.local.preferences.AppPreferences
+import com.vedica.labs.ind.app.chat.openmodels.data.model.BackendType
+import com.vedica.labs.ind.app.chat.openmodels.data.model.ModelCatalog
 import com.vedica.labs.ind.app.chat.openmodels.data.model.ModelDownloadState
 import com.vedica.labs.ind.app.chat.openmodels.domain.download.ModelDownloader
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -9,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,7 +37,7 @@ class ModelRepository @Inject constructor(
 
     private val _cancelledDownloads = mutableSetOf<String>()
 
-    suspend fun startDownload(modelId: String, url: String, totalBytes: Long) {
+    suspend fun startDownload(modelId: String, url: String, totalBytes: Long, tokenizerUrl: String? = null) {
         val outputFile = java.io.File(getModelPath(modelId))
         _downloads.value += (modelId to ModelDownloadState(
                     modelId = modelId, totalBytes = totalBytes
@@ -54,6 +57,23 @@ class ModelRepository @Inject constructor(
                 _cancelledDownloads.remove(modelId)
                 return
             }
+
+            if (!tokenizerUrl.isNullOrBlank()) {
+                val tokFile = java.io.File(outputFile.parentFile, "tokenizer.json")
+                if (!tokFile.exists()) {
+                    Timber.tag("ModelRepo").d("Downloading tokenizer from %s", tokenizerUrl)
+                    modelDownloader.download(
+                        modelId = modelId,
+                        url = tokenizerUrl,
+                        outputFile = tokFile,
+                        totalBytes = 5 * 1024 * 1024
+                    ) { }
+                    Timber.tag("ModelRepo").d("Tokenizer saved to %s (%d bytes)", tokFile.absolutePath, tokFile.length())
+                } else {
+                    Timber.tag("ModelRepo").d("Tokenizer already exists: %s", tokFile.absolutePath)
+                }
+            }
+
             _downloads.value += (modelId to ModelDownloadState(
                             modelId = modelId,
                             downloadedBytes = totalBytes,
@@ -90,7 +110,9 @@ class ModelRepository @Inject constructor(
 
     fun getModelPath(modelId: String): String {
         val dir = context.getExternalFilesDir("OpenModels")!!
-        return java.io.File(dir, "$modelId.gguf").absolutePath
+        val backendType = ModelCatalog.getBackendType(modelId)
+        val extension = backendType.fileExtension
+        return java.io.File(dir, "$modelId$extension").absolutePath
     }
 
     // File context operations

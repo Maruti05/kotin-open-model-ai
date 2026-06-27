@@ -101,6 +101,7 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
+    onNavigateToRepository: () -> Unit = {},
     viewModel: ChatViewModel = hiltViewModel(
         checkNotNull<ViewModelStoreOwner>(
             LocalViewModelStoreOwner.current
@@ -202,12 +203,14 @@ fun ChatScreen(
                 }
 
                 when {
-                    !modelManagerIsLoaded() -> {
+                    state.activeModelName == null -> {
                         InfoGuard(
                             icon = Icons.Outlined.Memory,
                             title = "No Model Loaded",
                             subtitle = "To start chatting entirely offline, you must load model weights into your device RAM memory first.",
-                            footnote = "Navigate to the Repository tab to download and load a model."
+                            footnote = "Browse available models in the Repository tab.",
+                            actionLabel = "Browse Models",
+                            onAction = onNavigateToRepository
                         )
                     }
                     state.activeSessionId == null -> {
@@ -240,9 +243,6 @@ fun ChatScreen(
         }
     }
 }
-
-@Composable
-private fun modelManagerIsLoaded(): Boolean = true
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -90,6 +90,15 @@
 -dontwarn sun.misc.**
 
 # ============================================================
+# LiteRT / Google AI Edge
+# ============================================================
+-keep class com.google.ai.edge.litert.** { *; }
+-keep class org.tensorflow.lite.** { *; }
+-keep class com.google.ai.edge.litert.support.** { *; }
+-dontwarn com.google.ai.edge.litert.**
+-dontwarn org.tensorflow.lite.**
+
+# ============================================================
 # General Android / Resources
 # ============================================================
 -keep class * extends android.app.Activity { *; }

@@ -1,5 +1,6 @@
 package com.vedica.labs.ind.app.chat.openmodels.domain.inference
 
+import com.vedica.labs.ind.app.chat.openmodels.data.model.BackendType
 import com.vedica.labs.ind.app.chat.openmodels.data.model.InferenceParams
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -18,6 +19,7 @@ class SimulatedInferenceEngine @Inject constructor() : InferenceEngine {
 
     override val isLoaded: Boolean get() = _isLoaded
     override val loaderName: String get() = "Simulated Engine"
+    override val backendType: BackendType get() = BackendType.LLAMA_CPP
     override val currentModelId: String? get() = _currentModelId
     override val currentTemplate: String? get() = _currentTemplate
 
